@@ -3,16 +3,32 @@ enum UserRole {
   company,
   driver;
 
+  /// String rol değerinden UserRole oluşturur (mock servis için).
   static UserRole fromString(String value) {
     switch (value) {
-      case 'super_admin':
+      case 'süper admin':
         return UserRole.superAdmin;
-      case 'company':
+      case 'yonetici':
         return UserRole.company;
-      case 'driver':
+      case 'sofor':
         return UserRole.driver;
       default:
         throw ArgumentError('Bilinmeyen rol: $value');
+    }
+  }
+
+  /// Backend'den gelen roleId'den UserRole oluşturur.
+  /// roleId: 1 = superAdmin, 2 = company, 3 = driver
+  static UserRole fromRoleId(int roleId) {
+    switch (roleId) {
+      case 1:
+        return UserRole.superAdmin;
+      case 2:
+        return UserRole.company;
+      case 3:
+        return UserRole.driver;
+      default:
+        throw ArgumentError('Bilinmeyen roleId: $roleId');
     }
   }
 
@@ -24,6 +40,17 @@ enum UserRole {
         return 'company';
       case UserRole.driver:
         return 'driver';
+    }
+  }
+
+  int toRoleId() {
+    switch (this) {
+      case UserRole.superAdmin:
+        return 1;
+      case UserRole.company:
+        return 2;
+      case UserRole.driver:
+        return 3;
     }
   }
 }
@@ -43,13 +70,33 @@ class UserModel {
     this.token,
   });
 
-  /// Backend JSON yanıtından UserModel oluşturur.
+  /// Mock servis JSON yanıtından UserModel oluşturur.
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'] as String,
       name: json['name'] as String,
       email: json['email'] as String,
       role: UserRole.fromString(json['role'] as String),
+      token: json['token'] as String?,
+    );
+  }
+
+  /// Backend API yanıtından UserModel oluşturur.
+  /// Beklenen format:
+  /// {
+  ///   "token": "...",
+  ///   "userId": 1,
+  ///   "email": "test@sirket.com",
+  ///   "firstName": "Test",
+  ///   "lastName": "Yonetici",
+  ///   "roleId": 1
+  /// }
+  factory UserModel.fromApiResponse(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['userId'].toString(),
+      name: '${json['firstName']} ${json['lastName']}',
+      email: json['email'] as String,
+      role: UserRole.fromRoleId(json['roleId'] as int),
       token: json['token'] as String?,
     );
   }
