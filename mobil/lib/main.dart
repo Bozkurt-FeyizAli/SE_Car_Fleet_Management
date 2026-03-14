@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
-import 'services/mock_auth_service.dart';
-// Backend hazır olduğunda aşağıdaki import'u aktif edin:
-// import 'services/api_auth_service.dart';
+import 'services/api_auth_service.dart';
 
 void main() {
   // =========================================================
   // AUTH SERVİS SEÇİMİ
   // ---------------------------------------------------------
-  // Şimdilik MockAuthService kullanılıyor.
-  // Backend hazır olduğunda aşağıdaki satırı değiştirin:
-  //   final authService = ApiAuthService(baseUrl: 'https://api.example.com');
+  // Mock servise dönmek için:
+  //   import 'services/mock_auth_service.dart';
+  //   final authService = MockAuthService();
   // =========================================================
-  final authService = MockAuthService();
+  final authService = ApiAuthService(baseUrl: 'http://161.35.194.242');
 
   runApp(MyApp(authService: authService));
 }
@@ -26,16 +24,16 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Filo Yönetimi',
+      title: 'Fleet Master',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        primaryColor: const Color(0xFF1E88E5),
-        scaffoldBackgroundColor: const Color(0xFF0A0E21),
+        primaryColor: const Color(0xFF2563EB),
+        scaffoldBackgroundColor: const Color(0xFF020617),
         colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF1E88E5),
-          secondary: const Color(0xFF42A5F5),
-          surface: const Color(0xFF1A2332),
+          primary: const Color(0xFF2563EB),
+          secondary: const Color(0xFF22D3EE),
+          surface: const Color(0xFF0F172A),
           error: Colors.redAccent,
         ),
         fontFamily: 'Roboto',
