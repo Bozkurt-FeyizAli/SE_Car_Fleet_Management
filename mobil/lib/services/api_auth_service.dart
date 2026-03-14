@@ -5,10 +5,8 @@ import 'auth_service.dart';
 import 'token_storage_service.dart';
 
 /// Gerçek backend ile JWT tabanlı kimlik doğrulama servisi.
-/// Backend hazır olduğunda bu sınıftaki TODO'ları doldurun.
 class ApiAuthService implements AuthService {
-  // TODO: Backend URL'ini buraya yazın
-  final String baseUrl;
+  String baseUrl = "http://161.35.194.242";
   final TokenStorageService _tokenStorage;
   final http.Client _httpClient;
 
@@ -16,43 +14,34 @@ class ApiAuthService implements AuthService {
     required this.baseUrl,
     TokenStorageService? tokenStorage,
     http.Client? httpClient,
-  })  : _tokenStorage = tokenStorage ?? TokenStorageService(),
-        _httpClient = httpClient ?? http.Client();
+  }) : _tokenStorage = tokenStorage ?? TokenStorageService(),
+       _httpClient = httpClient ?? http.Client();
 
   @override
   Future<UserModel> login(String email, String password) async {
-    // TODO: Backend endpoint'inize göre URL'i güncelleyin
     final response = await _httpClient.post(
-      Uri.parse('$baseUrl/api/auth/login'),
+      Uri.parse('$baseUrl/api/Auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
+      body: jsonEncode({'email': email, 'password': password}),
     );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-      // TODO: Backend yanıt formatına göre parse'ı ayarlayın
-      // Beklenen format:
+      // Backend yanıt formatı:
       // {
       //   "token": "eyJhbGciOiJIUzI1NiIs...",
-      //   "user": {
-      //     "id": "1",
-      //     "name": "Admin",
-      //     "email": "admin@filo.com",
-      //     "role": "super_admin"
-      //   }
+      //   "userId": 1,
+      //   "email": "test@sirket.com",
+      //   "firstName": "Test",
+      //   "lastName": "Yonetici",
+      //   "roleId": 1
       // }
-      final token = data['token'] as String;
-      final userJson = data['user'] as Map<String, dynamic>;
-      userJson['token'] = token;
-
-      final user = UserModel.fromJson(userJson);
+      final user = UserModel.fromApiResponse(data);
+      print(user);
 
       // Token'ı güvenli storage'a kaydet
-      await _tokenStorage.saveToken(token);
+      await _tokenStorage.saveToken(user.token!);
       await _tokenStorage.saveUserData(jsonEncode(user.toJson()));
 
       return user;
@@ -65,23 +54,7 @@ class ApiAuthService implements AuthService {
 
   @override
   Future<void> logout() async {
-    final token = await _tokenStorage.getToken();
-
-    if (token != null) {
-      // TODO: Backend'e logout isteği gönderin (opsiyonel)
-      try {
-        await _httpClient.post(
-          Uri.parse('$baseUrl/api/auth/logout'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-        );
-      } catch (_) {
-        // Logout isteği başarısız olsa bile local token'ı sil
-      }
-    }
-
+    // Local token'ı ve kullanıcı verisini temizle
     await _tokenStorage.clearAll();
   }
 
@@ -114,5 +87,42 @@ class ApiAuthService implements AuthService {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+  }
+
+  @override
+  Future<String> register({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String userName,
+    required String password,
+    required String confirmPassword,
+    required int roleId,
+  }) async {
+    final response = await _httpClient.post(
+      Uri.parse('$baseUrl/api/Auth/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        'userName': userName,
+        'password': password,
+        'confirmPassword': confirmPassword,
+        'roleId': roleId,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return 'Kayıt başarılı!';
+    } else if (response.statusCode == 400) {
+      final data = jsonDecode(response.body);
+      final message = data is Map
+          ? (data['message'] ?? data.toString())
+          : response.body;
+      throw Exception(message);
+    } else {
+      throw Exception('Sunucu hatası: ${response.statusCode}');
+    }
   }
 }
