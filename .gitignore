@@ -1,3 +1,33 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+.vscode/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# System and OS files
+.DS_Store
+Thumbs.db
+
+# Other
+appsettings.Development.json
 ### https://raw.github.com/github/gitignore/80a8803b004013d17291196825a327b9e871f009/Android.gitignore
 
 # Built application files
@@ -271,3 +301,4 @@ mobil/**
 !mobil/pubspec.lock
 !mobil/analysis_options.yaml
 !mobil/README.md
+
