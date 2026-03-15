@@ -32,7 +32,13 @@ namespace Backend.Controllers
 
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
 
-            if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            if (user == null)
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+
+            var passwordValid = await VerifyAndUpgradePasswordIfNeededAsync(user, request.Password);
+            if (!passwordValid)
             {
                 return Unauthorized(new { message = "Invalid email or password." });
             }
@@ -84,6 +90,36 @@ namespace Backend.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
 
             return tokenHandler.WriteToken(token);
+        }
+
+        private async Task<bool> VerifyAndUpgradePasswordIfNeededAsync(Models.User user, string plainPassword)
+        {
+            if (string.IsNullOrWhiteSpace(user.PasswordHash))
+            {
+                return false;
+            }
+
+            // Legacy/plain-text records are migrated to BCrypt after first successful login.
+            if (!(user.PasswordHash.StartsWith("$2a$") || user.PasswordHash.StartsWith("$2b$") || user.PasswordHash.StartsWith("$2y$")))
+            {
+                if (!string.Equals(user.PasswordHash, plainPassword, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(plainPassword);
+                await _context.SaveChangesAsync();
+                return true;
+            }
+
+            try
+            {
+                return BCrypt.Net.BCrypt.Verify(plainPassword, user.PasswordHash);
+            }
+            catch (BCrypt.Net.SaltParseException)
+            {
+                return false;
+            }
         }
     }
 }

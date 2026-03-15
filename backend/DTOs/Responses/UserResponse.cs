@@ -7,6 +7,7 @@ namespace Backend.DTOs
     public class UserResponse
     {
         public uint Id { get; set; }
+        public uint? CompanyId { get; set; }
         public uint RoleId { get; set; }
         public uint? ParentUserId { get; set; }
         public string FirstName { get; set; } = string.Empty;
@@ -23,6 +24,7 @@ namespace Backend.DTOs
         public UserResponse(User user)
         {
             Id = user.Id;
+            CompanyId = user.CompanyId;
             RoleId = user.RoleId;
             ParentUserId = user.ParentUserId;
             FirstName = user.FirstName;

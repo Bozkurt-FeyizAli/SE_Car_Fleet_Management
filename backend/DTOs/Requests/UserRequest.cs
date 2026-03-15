@@ -2,6 +2,7 @@ namespace Backend.DTOs
 {
     public class UserRequest
     {
+        public uint? CompanyId { get; set; }
         public uint RoleId { get; set; }
         public uint? ParentUserId { get; set; }
         public string FirstName { get; set; } = string.Empty;

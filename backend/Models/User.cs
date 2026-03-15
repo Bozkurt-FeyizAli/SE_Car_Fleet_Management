@@ -10,6 +10,9 @@ namespace Backend.Models
         [Column("id")]
         public uint Id { get; set; }
 
+        [Column("company_id")]
+        public uint? CompanyId { get; set; }
+
         [Required]
         [Column("role_id")]
         public uint RoleId { get; set; }
@@ -69,6 +72,8 @@ namespace Backend.Models
 
         // --- Hierarchy Navigations ---
         public Role? Role { get; set; }
+
+        public Company? Company { get; set; }
         
         public User? ParentUser { get; set; }
         public ICollection<User> ChildUsers { get; set; } = new List<User>();
