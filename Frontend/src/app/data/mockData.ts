@@ -10,6 +10,10 @@ export interface Company {
   website: string;
   logo_url: string;
   status: "active" | "passive" | "suspended";
+  manager_name?: string;
+  manager_surname?: string;
+  manager_tc?: string;
+  manager_password?: string;
   created_at: string;
   updated_at: string;
 }
@@ -58,6 +62,9 @@ export interface Driver {
   current_score: number;
   status: "active" | "on_trip" | "off_duty" | "inactive" | "on_leave";
   email: string;
+  password?: string;
+  sicil_number?: string;
+  vehicle_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,8 +86,11 @@ export interface Vehicle {
   vehicle_type: "car" | "van" | "truck" | "motorcycle" | "lorry" | "sedan" | "light_commercial";
   capacity_kg: number;
   status: "available" | "in_service" | "out_of_service" | "active" | "passive" | "rented";
+  insurance_start: string;
   insurance_expiry: string;
+  inspection_start: string;
   inspection_expiry: string;
+  casco_start: string;
   casco_expiry: string;
   next_maint_km: number;
   base_price: number;
@@ -228,11 +238,11 @@ export interface DailyCheck {
 // ===================== MOCK DATA =====================
 
 export let companies: Company[] = [
-  { id: 1, name: "Anadolu Lojistik A.S.", tax_number: "1234567890", address: "Kadikoy, Istanbul", phone: "0212 555 1234", email: "info@anadolulojistik.com", website: "www.anadolulojistik.com", logo_url: "", status: "active", created_at: "2015-03-12", updated_at: "2026-01-15" },
-  { id: 2, name: "Karadeniz Tasımacilik Ltd.", tax_number: "9876543210", address: "Trabzon Merkez", phone: "0462 555 4321", email: "iletisim@karadeniztasima.com", website: "www.karadeniztasima.com", logo_url: "", status: "active", created_at: "2018-07-25", updated_at: "2026-02-10" },
-  { id: 3, name: "Ege Kargo Hizmetleri", tax_number: "4567891230", address: "Alsancak, Izmir", phone: "0232 555 5678", email: "destek@egekargo.com", website: "www.egekargo.com", logo_url: "", status: "suspended", created_at: "2010-01-05", updated_at: "2025-11-20" },
-  { id: 4, name: "Marmara Filo Yonetimi", tax_number: "7891234560", address: "Nilufer, Bursa", phone: "0224 555 9012", email: "info@marmarafilo.com", website: "www.marmarafilo.com", logo_url: "", status: "active", created_at: "2020-11-18", updated_at: "2026-03-01" },
-  { id: 5, name: "Ic Anadolu Nakliyat", tax_number: "3216549870", address: "Cankaya, Ankara", phone: "0312 555 3456", email: "bilgi@icanadolunakliyat.com", website: "www.icanadolunakliyat.com", logo_url: "", status: "active", created_at: "2012-06-30", updated_at: "2026-02-28" },
+  { id: 1, name: "Anadolu Lojistik A.S.", tax_number: "1234567890", address: "Kadikoy, Istanbul", phone: "0212 555 1234", email: "info@anadolulojistik.com", website: "www.anadolulojistik.com", logo_url: "", status: "active", manager_name: "Ahmet", manager_surname: "Yilmaz", manager_tc: "11111111111", manager_password: "", created_at: "2015-03-12", updated_at: "2026-01-15" },
+  { id: 2, name: "Karadeniz Tasımacilik Ltd.", tax_number: "9876543210", address: "Trabzon Merkez", phone: "0462 555 4321", email: "iletisim@karadeniztasima.com", website: "www.karadeniztasima.com", logo_url: "", status: "active", manager_name: "Mehmet", manager_surname: "Demir", manager_tc: "22222222222", manager_password: "", created_at: "2018-07-25", updated_at: "2026-02-10" },
+  { id: 3, name: "Ege Kargo Hizmetleri", tax_number: "4567891230", address: "Alsancak, Izmir", phone: "0232 555 5678", email: "destek@egekargo.com", website: "www.egekargo.com", logo_url: "", status: "suspended", manager_name: "Ali", manager_surname: "Ozturk", manager_tc: "33333333333", manager_password: "", created_at: "2010-01-05", updated_at: "2025-11-20" },
+  { id: 4, name: "Marmara Filo Yonetimi", tax_number: "7891234560", address: "Nilufer, Bursa", phone: "0224 555 9012", email: "info@marmarafilo.com", website: "www.marmarafilo.com", logo_url: "", status: "active", manager_name: "Zeynep", manager_surname: "Arslan", manager_tc: "44444444444", manager_password: "", created_at: "2020-11-18", updated_at: "2026-03-01" },
+  { id: 5, name: "Ic Anadolu Nakliyat", tax_number: "3216549870", address: "Cankaya, Ankara", phone: "0312 555 3456", email: "bilgi@icanadolunakliyat.com", website: "www.icanadolunakliyat.com", logo_url: "", status: "active", manager_name: "Selin", manager_surname: "Koc", manager_tc: "55555555555", manager_password: "", created_at: "2012-06-30", updated_at: "2026-02-28" },
 ];
 
 export let users: User[] = [
@@ -262,14 +272,14 @@ export let departments: Department[] = [
 ];
 
 export let drivers: Driver[] = [
-  { id: 1, company_id: 1, user_id: 10, department_id: 1, first_name: "Hasan", last_name: "Aydin", phone: "0540 111 0001", identity_number: "12345678901", license_number: "LIC-001", license_class: "C", hire_date: "2018-01-10", current_score: 87.5, status: "on_trip", email: "hasan@anadolulojistik.com", created_at: "2018-01-10", updated_at: "2026-03-01" },
-  { id: 2, company_id: 1, user_id: 11, department_id: 2, first_name: "Ibrahim", last_name: "Yildiz", phone: "0540 111 0002", identity_number: "12345678902", license_number: "LIC-002", license_class: "C", hire_date: "2019-03-05", current_score: 92.0, status: "on_trip", email: "ibrahim@anadolulojistik.com", created_at: "2019-03-05", updated_at: "2026-03-02" },
-  { id: 3, company_id: 2, user_id: 12, department_id: 3, first_name: "Mustafa", last_name: "Eren", phone: "0540 222 0001", identity_number: "12345678903", license_number: "LIC-003", license_class: "E", hire_date: "2020-06-12", current_score: 78.0, status: "active", email: "mustafa@karadeniztasima.com", created_at: "2020-06-12", updated_at: "2026-02-15" },
-  { id: 4, company_id: 2, user_id: null, department_id: 3, first_name: "Osman", last_name: "Gunes", phone: "0540 222 0002", identity_number: "12345678904", license_number: "LIC-004", license_class: "C", hire_date: "2021-01-15", current_score: 65.0, status: "off_duty", email: "osman@karadeniztasima.com", created_at: "2021-01-15", updated_at: "2026-01-20" },
-  { id: 5, company_id: 4, user_id: 13, department_id: 5, first_name: "Kemal", last_name: "Aksoy", phone: "0540 333 0001", identity_number: "12345678905", license_number: "LIC-005", license_class: "D", hire_date: "2021-01-20", current_score: 95.0, status: "on_trip", email: "kemal@marmarafilo.com", created_at: "2021-01-20", updated_at: "2026-03-01" },
-  { id: 6, company_id: 5, user_id: null, department_id: 6, first_name: "Recep", last_name: "Polat", phone: "0540 444 0001", identity_number: "12345678906", license_number: "LIC-006", license_class: "C", hire_date: "2020-08-10", current_score: 80.0, status: "active", email: "recep@icanadolunakliyat.com", created_at: "2020-08-10", updated_at: "2026-02-28" },
-  { id: 7, company_id: 1, user_id: null, department_id: 1, first_name: "Serkan", last_name: "Turan", phone: "0540 111 0003", identity_number: "12345678907", license_number: "LIC-007", license_class: "E", hire_date: "2022-04-01", current_score: 88.5, status: "on_trip", email: "serkan@anadolulojistik.com", created_at: "2022-04-01", updated_at: "2026-02-28" },
-  { id: 8, company_id: 3, user_id: null, department_id: 4, first_name: "Yusuf", last_name: "Cetin", phone: "0540 555 0001", identity_number: "12345678908", license_number: "LIC-008", license_class: "B", hire_date: "2019-11-20", current_score: 72.0, status: "off_duty", email: "yusuf@egekargo.com", created_at: "2019-11-20", updated_at: "2025-11-20" },
+  { id: 1, company_id: 1, user_id: 10, department_id: 1, first_name: "Hasan", last_name: "Aydin", phone: "0540 111 0001", identity_number: "12345678901", license_number: "LIC-001", license_class: "C", hire_date: "2018-01-10", current_score: 87.5, status: "on_trip", email: "hasan@anadolulojistik.com", password: "", sicil_number: "SIC-001", vehicle_id: 1, created_at: "2018-01-10", updated_at: "2026-03-01" },
+  { id: 2, company_id: 1, user_id: 11, department_id: 2, first_name: "Ibrahim", last_name: "Yildiz", phone: "0540 111 0002", identity_number: "12345678902", license_number: "LIC-002", license_class: "C", hire_date: "2019-03-05", current_score: 92.0, status: "on_trip", email: "ibrahim@anadolulojistik.com", password: "", sicil_number: "SIC-002", vehicle_id: 2, created_at: "2019-03-05", updated_at: "2026-03-02" },
+  { id: 3, company_id: 2, user_id: 12, department_id: 3, first_name: "Mustafa", last_name: "Eren", phone: "0540 222 0001", identity_number: "12345678903", license_number: "LIC-003", license_class: "E", hire_date: "2020-06-12", current_score: 78.0, status: "active", email: "mustafa@karadeniztasima.com", password: "", sicil_number: "SIC-003", vehicle_id: null, created_at: "2020-06-12", updated_at: "2026-02-15" },
+  { id: 4, company_id: 2, user_id: null, department_id: 3, first_name: "Osman", last_name: "Gunes", phone: "0540 222 0002", identity_number: "12345678904", license_number: "LIC-004", license_class: "C", hire_date: "2021-01-15", current_score: 65.0, status: "off_duty", email: "osman@karadeniztasima.com", password: "", sicil_number: "SIC-004", vehicle_id: null, created_at: "2021-01-15", updated_at: "2026-01-20" },
+  { id: 5, company_id: 4, user_id: 13, department_id: 5, first_name: "Kemal", last_name: "Aksoy", phone: "0540 333 0001", identity_number: "12345678905", license_number: "LIC-005", license_class: "D", hire_date: "2021-01-20", current_score: 95.0, status: "on_trip", email: "kemal@marmarafilo.com", password: "", sicil_number: "SIC-005", vehicle_id: 5, created_at: "2021-01-20", updated_at: "2026-03-01" },
+  { id: 6, company_id: 5, user_id: null, department_id: 6, first_name: "Recep", last_name: "Polat", phone: "0540 444 0001", identity_number: "12345678906", license_number: "LIC-006", license_class: "C", hire_date: "2020-08-10", current_score: 80.0, status: "active", email: "recep@icanadolunakliyat.com", password: "", sicil_number: "SIC-006", vehicle_id: null, created_at: "2020-08-10", updated_at: "2026-02-28" },
+  { id: 7, company_id: 1, user_id: null, department_id: 1, first_name: "Serkan", last_name: "Turan", phone: "0540 111 0003", identity_number: "12345678907", license_number: "LIC-007", license_class: "E", hire_date: "2022-04-01", current_score: 88.5, status: "on_trip", email: "serkan@anadolulojistik.com", password: "", sicil_number: "SIC-007", vehicle_id: 7, created_at: "2022-04-01", updated_at: "2026-02-28" },
+  { id: 8, company_id: 3, user_id: null, department_id: 4, first_name: "Yusuf", last_name: "Cetin", phone: "0540 555 0001", identity_number: "12345678908", license_number: "LIC-008", license_class: "B", hire_date: "2019-11-20", current_score: 72.0, status: "off_duty", email: "yusuf@egekargo.com", password: "", sicil_number: "SIC-008", vehicle_id: null, created_at: "2019-11-20", updated_at: "2025-11-20" },
 ];
 
 export let driverLicenses: DriverLicense[] = [
@@ -284,14 +294,14 @@ export let driverLicenses: DriverLicense[] = [
 ];
 
 export let vehicles: Vehicle[] = [
-  { id: 1, company_id: 1, plate_number: "34 ABC 123", brand: "Mercedes-Benz", model: "Actros", year: 2022, vehicle_type: "truck", capacity_kg: 25000, status: "in_service", insurance_expiry: "2026-06-30", inspection_expiry: "2026-12-31", casco_expiry: "2026-12-31", next_maint_km: 150000, base_price: 3200, gps_data: "41.0082,28.9784", current_driver_id: 1, document_number: "DOC-2024-001", created_at: "2022-01-15", updated_at: "2026-03-01" },
-  { id: 2, company_id: 1, plate_number: "34 DEF 456", brand: "Volvo", model: "FH16", year: 2021, vehicle_type: "truck", capacity_kg: 30000, status: "in_service", insurance_expiry: "2026-03-15", inspection_expiry: "2026-09-15", casco_expiry: "2026-09-15", next_maint_km: 120000, base_price: 3500, gps_data: "38.4192,27.1287", current_driver_id: 2, document_number: "DOC-2024-002", created_at: "2021-06-20", updated_at: "2026-03-02" },
-  { id: 3, company_id: 2, plate_number: "61 GHI 789", brand: "Scania", model: "R500", year: 2023, vehicle_type: "truck", capacity_kg: 28000, status: "available", insurance_expiry: "2026-07-20", inspection_expiry: "2027-01-20", casco_expiry: "2027-01-20", next_maint_km: 80000, base_price: 2800, gps_data: "41.0027,39.7168", current_driver_id: null, document_number: "DOC-2024-003", created_at: "2023-03-10", updated_at: "2026-02-15" },
-  { id: 4, company_id: 2, plate_number: "61 JKL 012", brand: "MAN", model: "TGX", year: 2020, vehicle_type: "truck", capacity_kg: 24000, status: "out_of_service", insurance_expiry: "2025-11-10", inspection_expiry: "2026-05-10", casco_expiry: "2026-05-10", next_maint_km: 200000, base_price: 2500, gps_data: null, current_driver_id: null, document_number: "DOC-2024-004", created_at: "2020-09-05", updated_at: "2026-01-20" },
-  { id: 5, company_id: 4, plate_number: "34 MNO 345", brand: "DAF", model: "XF", year: 2023, vehicle_type: "truck", capacity_kg: 26000, status: "in_service", insurance_expiry: "2026-09-25", inspection_expiry: "2027-03-25", casco_expiry: "2027-03-25", next_maint_km: 60000, base_price: 3000, gps_data: "40.1885,29.0610", current_driver_id: 5, document_number: "DOC-2024-005", created_at: "2023-05-15", updated_at: "2026-03-01" },
-  { id: 6, company_id: 5, plate_number: "06 PRS 678", brand: "Iveco", model: "S-Way", year: 2022, vehicle_type: "truck", capacity_kg: 22000, status: "available", insurance_expiry: "2026-02-05", inspection_expiry: "2026-08-05", casco_expiry: "2026-08-05", next_maint_km: 100000, base_price: 2600, gps_data: "39.9334,32.8597", current_driver_id: null, document_number: "DOC-2024-006", created_at: "2022-07-20", updated_at: "2026-02-28" },
-  { id: 7, company_id: 1, plate_number: "34 STU 901", brand: "Mercedes-Benz", model: "Arocs", year: 2024, vehicle_type: "lorry", capacity_kg: 32000, status: "in_service", insurance_expiry: "2026-12-18", inspection_expiry: "2027-06-18", casco_expiry: "2027-06-18", next_maint_km: 30000, base_price: 4000, gps_data: "41.0082,28.9784", current_driver_id: 7, document_number: "DOC-2024-007", created_at: "2024-01-10", updated_at: "2026-02-28" },
-  { id: 8, company_id: 3, plate_number: "35 VYZ 234", brand: "Renault", model: "T High", year: 2019, vehicle_type: "truck", capacity_kg: 20000, status: "out_of_service", insurance_expiry: "2025-10-12", inspection_expiry: "2026-04-12", casco_expiry: "2026-04-12", next_maint_km: 250000, base_price: 2000, gps_data: null, current_driver_id: null, document_number: "DOC-2024-008", created_at: "2019-11-25", updated_at: "2025-11-20" },
+  { id: 1, company_id: 1, plate_number: "34 ABC 123", brand: "Mercedes-Benz", model: "Actros", year: 2022, vehicle_type: "truck", capacity_kg: 25000, status: "in_service", insurance_start: "2025-06-30", insurance_expiry: "2026-06-30", inspection_start: "2025-12-31", inspection_expiry: "2026-12-31", casco_start: "2025-12-31", casco_expiry: "2026-12-31", next_maint_km: 150000, base_price: 3200, gps_data: "41.0082,28.9784", current_driver_id: 1, document_number: "DOC-2024-001", created_at: "2022-01-15", updated_at: "2026-03-01" },
+  { id: 2, company_id: 1, plate_number: "34 DEF 456", brand: "Volvo", model: "FH16", year: 2021, vehicle_type: "truck", capacity_kg: 30000, status: "in_service", insurance_start: "2025-03-15", insurance_expiry: "2026-03-15", inspection_start: "2025-09-15", inspection_expiry: "2026-09-15", casco_start: "2025-09-15", casco_expiry: "2026-09-15", next_maint_km: 120000, base_price: 3500, gps_data: "38.4192,27.1287", current_driver_id: 2, document_number: "DOC-2024-002", created_at: "2021-06-20", updated_at: "2026-03-02" },
+  { id: 3, company_id: 2, plate_number: "61 GHI 789", brand: "Scania", model: "R500", year: 2023, vehicle_type: "truck", capacity_kg: 28000, status: "available", insurance_start: "2025-07-20", insurance_expiry: "2026-07-20", inspection_start: "2026-01-20", inspection_expiry: "2027-01-20", casco_start: "2026-01-20", casco_expiry: "2027-01-20", next_maint_km: 80000, base_price: 2800, gps_data: "41.0027,39.7168", current_driver_id: null, document_number: "DOC-2024-003", created_at: "2023-03-10", updated_at: "2026-02-15" },
+  { id: 4, company_id: 2, plate_number: "61 JKL 012", brand: "MAN", model: "TGX", year: 2020, vehicle_type: "truck", capacity_kg: 24000, status: "out_of_service", insurance_start: "2024-11-10", insurance_expiry: "2025-11-10", inspection_start: "2025-05-10", inspection_expiry: "2026-05-10", casco_start: "2025-05-10", casco_expiry: "2026-05-10", next_maint_km: 200000, base_price: 2500, gps_data: null, current_driver_id: null, document_number: "DOC-2024-004", created_at: "2020-09-05", updated_at: "2026-01-20" },
+  { id: 5, company_id: 4, plate_number: "34 MNO 345", brand: "DAF", model: "XF", year: 2023, vehicle_type: "truck", capacity_kg: 26000, status: "in_service", insurance_start: "2025-09-25", insurance_expiry: "2026-09-25", inspection_start: "2026-03-25", inspection_expiry: "2027-03-25", casco_start: "2026-03-25", casco_expiry: "2027-03-25", next_maint_km: 60000, base_price: 3000, gps_data: "40.1885,29.0610", current_driver_id: 5, document_number: "DOC-2024-005", created_at: "2023-05-15", updated_at: "2026-03-01" },
+  { id: 6, company_id: 5, plate_number: "06 PRS 678", brand: "Iveco", model: "S-Way", year: 2022, vehicle_type: "truck", capacity_kg: 22000, status: "available", insurance_start: "2025-02-05", insurance_expiry: "2026-02-05", inspection_start: "2025-08-05", inspection_expiry: "2026-08-05", casco_start: "2025-08-05", casco_expiry: "2026-08-05", next_maint_km: 100000, base_price: 2600, gps_data: "39.9334,32.8597", current_driver_id: null, document_number: "DOC-2024-006", created_at: "2022-07-20", updated_at: "2026-02-28" },
+  { id: 7, company_id: 1, plate_number: "34 STU 901", brand: "Mercedes-Benz", model: "Arocs", year: 2024, vehicle_type: "lorry", capacity_kg: 32000, status: "in_service", insurance_start: "2025-12-18", insurance_expiry: "2026-12-18", inspection_start: "2026-06-18", inspection_expiry: "2027-06-18", casco_start: "2026-06-18", casco_expiry: "2027-06-18", next_maint_km: 30000, base_price: 4000, gps_data: "41.0082,28.9784", current_driver_id: 7, document_number: "DOC-2024-007", created_at: "2024-01-10", updated_at: "2026-02-28" },
+  { id: 8, company_id: 3, plate_number: "35 VYZ 234", brand: "Renault", model: "T High", year: 2019, vehicle_type: "truck", capacity_kg: 20000, status: "out_of_service", insurance_start: "2024-10-12", insurance_expiry: "2025-10-12", inspection_start: "2025-04-12", inspection_expiry: "2026-04-12", casco_start: "2025-04-12", casco_expiry: "2026-04-12", next_maint_km: 250000, base_price: 2000, gps_data: null, current_driver_id: null, document_number: "DOC-2024-008", created_at: "2019-11-25", updated_at: "2025-11-20" },
 ];
 
 export let interCompanyRentals: InterCompanyRental[] = [

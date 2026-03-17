@@ -1,7 +1,17 @@
 import React from "react";
 import { Building2, FileText, Mail, Phone, Globe, Calendar, Shield, MapPin } from "lucide-react";
 import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
-import { driverCompany } from "../DriverPanel";
+
+const driverCompany = {
+  name: "Bozkurt Lojistik",
+  tax_number: "1234567890",
+  email: "iletisim@bozkurtlojistik.com",
+  phone: "+90 555 123 45 67",
+  address: "Atatürk Mah. Cumhuriyet Cad. No:1 Ataşehir/İstanbul",
+  website: "www.bozkurtlojistik.com",
+  status: "active",
+  created_at: "2023-01-15T00:00:00.000Z"
+};
 
 function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: React.ReactNode }) {
   return (

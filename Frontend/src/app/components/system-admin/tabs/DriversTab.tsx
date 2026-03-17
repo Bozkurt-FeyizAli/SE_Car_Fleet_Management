@@ -1,109 +1,190 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DataTable, Column } from "../../shared/DataTable";
-import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
+import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
-import { drivers, companies, departments, Driver, nextId, getCompanyName, getVehiclePlate, getDepartmentName } from "../../../data/mockData";
 import { toast } from "sonner";
 
+export interface ApiUser {
+  id?: number;
+  roleId: number | null;
+  parentUserId: number | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  passwordHash: string | null;
+  phone: string | null;
+  tcIdentityNumber: string | null;
+  criminalRecord: string | null;
+  driverLicenseId: string | null;
+  driverScore: number | null;
+  driverTripStatus: string | null;
+  assignedVehicleId: number | null;
+}
+
 export function DriversTab() {
-  const [data, setData] = useState([...drivers]);
-  const [editItem, setEditItem] = useState<Driver | null>(null);
+  const [data, setData] = useState<ApiUser[]>([]);
+  const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteItem, setDeleteItem] = useState<Driver | null>(null);
-  const [form, setForm] = useState({ first_name: "", last_name: "", phone: "", identity_number: "", license_number: "", license_class: "C", hire_date: "", company_id: "", department_id: "", status: "active" as Driver["status"], email: "" });
+  const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const getInitialForm = (): ApiUser => ({
+    roleId: null,
+    parentUserId: null,
+    firstName: "",
+    lastName: "",
+    email: "",
+    passwordHash: "",
+    phone: "",
+    tcIdentityNumber: "",
+    criminalRecord: "",
+    driverLicenseId: "",
+    driverScore: 80,
+    driverTripStatus: "active",
+    assignedVehicleId: null,
+  });
+
+  const [form, setForm] = useState<ApiUser>(getInitialForm());
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/User");
+      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
+      const list = await res.json();
+      setData(list);
+    } catch (e: any) {
+      toast.error(e.message || "Bir hata oluştu");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const openAdd = () => {
-    setForm({ first_name: "", last_name: "", phone: "", identity_number: "", license_number: "", license_class: "C", hire_date: "", company_id: "", department_id: "", status: "active", email: "" });
+    setForm(getInitialForm());
     setEditItem(null);
     setShowForm(true);
   };
 
-  const openEdit = (item: Driver) => {
-    setForm({ first_name: item.first_name, last_name: item.last_name, phone: item.phone, identity_number: item.identity_number, license_number: item.license_number, license_class: item.license_class, hire_date: item.hire_date, company_id: item.company_id.toString(), department_id: item.department_id.toString(), status: item.status, email: item.email });
+  const openEdit = (item: ApiUser) => {
+    setForm({ ...item, passwordHash: "" }); // Şifreyi güvenlik gereği boş gösteriyoruz
     setEditItem(item);
     setShowForm(true);
   };
 
-  const handleSave = () => {
-    if (!form.first_name || !form.last_name || !form.license_number) { toast.error("Zorunlu alanlari doldurun"); return; }
-    if (editItem) {
-      const updated = data.map(d => d.id === editItem.id ? { ...d, ...form, company_id: Number(form.company_id), department_id: Number(form.department_id), updated_at: new Date().toISOString() } : d);
-      setData(updated);
-      drivers.splice(0, drivers.length, ...updated);
-      toast.success("Sofor guncellendi");
-    } else {
-      const newItem: Driver = { id: nextId(), ...form, company_id: Number(form.company_id) || 1, department_id: Number(form.department_id) || 1, user_id: null, current_score: 80, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-      const updated = [...data, newItem];
-      setData(updated);
-      drivers.splice(0, drivers.length, ...updated);
-      toast.success("Sofor eklendi");
+  const handleSave = async () => {
+    if (!form.firstName || !form.lastName) {
+      toast.error("Ad ve Soyad zorunludur");
+      return;
     }
-    setShowForm(false);
+
+    const payload = {
+      ...form,
+      roleId: 3,
+      parentUserId: form.parentUserId ? Number(form.parentUserId) : null,
+      driverScore: form.driverScore ? Number(form.driverScore) : null,
+      assignedVehicleId: form.assignedVehicleId ? Number(form.assignedVehicleId) : null,
+    };
+
+    try {
+      const method = editItem && editItem.id ? "PUT" : "POST";
+      const endpoint = editItem && editItem.id ? `/api/User/${editItem.id}` : `/api/User`;
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
+
+      toast.success(editItem ? "Şoför/Kullanıcı güncellendi" : "Şoför/Kullanıcı eklendi");
+      setShowForm(false);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
   };
 
-  const handleDelete = () => {
-    if (!deleteItem) return;
-    const updated = data.filter(d => d.id !== deleteItem.id);
-    setData(updated);
-    drivers.splice(0, drivers.length, ...updated);
-    setDeleteItem(null);
-    toast.success("Sofor silindi");
+  const handleDelete = async () => {
+    if (!deleteItem || !deleteItem.id) return;
+    try {
+      const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error("Silme işlemi başarısız");
+      toast.success("Şoför silindi");
+      setDeleteItem(null);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
   };
 
-  const columns: Column<Driver>[] = [
-    { key: "name", header: "Ad Soyad", render: (d) => `${d.first_name} ${d.last_name}` },
-    { key: "license", header: "Ehliyet No", render: (d) => d.license_number },
-    { key: "class", header: "Sinif", render: (d) => d.license_class },
-    { key: "score", header: "Puan", render: (d) => <span className={d.current_score >= 80 ? "text-emerald-600" : d.current_score >= 60 ? "text-amber-600" : "text-red-600"}>{d.current_score}</span> },
-    { key: "company", header: "Sirket", render: (d) => getCompanyName(d.company_id) },
-    { key: "dept", header: "Departman", render: (d) => getDepartmentName(d.department_id) },
-    { key: "status", header: "Durum", render: (d) => <StatusBadge label={getStatusLabel(d.status)} variant={getStatusVariant(d.status)} /> },
+  const columns: Column<ApiUser>[] = [
+    { key: "name", header: "Ad Soyad", render: (d) => `${d.firstName || ""} ${d.lastName || ""}` },
+    { key: "license", header: "Ehliyet No", render: (d) => d.driverLicenseId || "—" },
+    { key: "score", header: "Puan", render: (d) => {
+        const score = d.driverScore ?? 0;
+        return <span className={score >= 80 ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-600"}>{score}</span>;
+      } 
+    },
+    { key: "vehicle", header: "Araç ID", render: (d) => d.assignedVehicleId || "—" },
+    { key: "status", header: "Durum", render: (d) => {
+        const status = d.driverTripStatus || "inactive";
+        const variant = status === "active" ? "success" : status === "on_trip" ? "info" : "neutral";
+        const label = status === "active" ? "Aktif" : status === "on_trip" ? "Seferde" : "Pasif";
+        return <StatusBadge label={label} variant={variant} />;
+      }
+    },
   ];
 
   return (
     <div>
-      <h2 className="mb-4">Soforler</h2>
-      <DataTable data={data} columns={columns} searchPlaceholder="Sofor ara..." searchKeys={["first_name", "last_name", "license_number"]} onAdd={openAdd} addLabel="Sofor Ekle" onEdit={openEdit} onDelete={(d) => setDeleteItem(d)} />
-
-      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Sofor Duzenle" : "Yeni Sofor"} onSubmit={handleSave} wide>
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Şoförler / Kullanıcılar</h2>
+      <DataTable 
+        data={data} 
+        columns={columns} 
+        searchPlaceholder="Şoför ara..." 
+        searchKeys={["firstName", "lastName", "driverLicenseId"]} 
+        onAdd={openAdd} 
+        addLabel="Şoför Ekle" 
+        onEdit={openEdit} 
+        onDelete={(d) => setDeleteItem(d)} 
+      />
+      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Şoför Düzenle" : "Yeni Şoför"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Ad *"><Input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></Field>
-          <Field label="Soyad *"><Input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></Field>
-          <Field label="E-posta"><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Telefon"><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
-          <Field label="TC Kimlik No"><Input value={form.identity_number} onChange={e => setForm({ ...form, identity_number: e.target.value })} /></Field>
-          <Field label="Ehliyet No *"><Input value={form.license_number} onChange={e => setForm({ ...form, license_number: e.target.value })} /></Field>
-          <Field label="Ehliyet Sinifi">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.license_class} onChange={e => setForm({ ...form, license_class: e.target.value })}>
-              {["B", "C", "D", "E"].map(c => <option key={c} value={c}>{c}</option>)}
+          <Field label="Ad *"><Input value={form.firstName || ""} onChange={e => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Soyad *"><Input value={form.lastName || ""} onChange={e => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="E-posta"><Input type="email" value={form.email || ""} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Şifre (Değiştirmek için yazın)"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
+          <Field label="Telefon"><Input value={form.phone || ""} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
+          <Field label="TC Kimlik No"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
+          <Field label="Sicil Kaydı (Criminal Record)"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
+          <Field label="Ehliyet No *"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
+          <Field label="Rol">
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="3">
+              <option value="3">Şoför (Driver)</option>
             </select>
           </Field>
-          <Field label="Ise Baslama"><Input type="date" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} /></Field>
-          <Field label="Sirket">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.company_id} onChange={e => setForm({ ...form, company_id: e.target.value })}>
-              <option value="">Sec...</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Departman">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.department_id} onChange={e => setForm({ ...form, department_id: e.target.value })}>
-              <option value="">Sec...</option>
-              {departments.filter(dep => !form.company_id || dep.company_id === Number(form.company_id)).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </Field>
+          <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentUserId || ""} onChange={e => setForm({ ...form, parentUserId: Number(e.target.value) })} /></Field>
+          <Field label="Sürücü Puanı"><Input type="number" value={form.driverScore || 0} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
+          <Field label="Atanan Araç ID"><Input type="number" value={form.assignedVehicleId || ""} onChange={e => setForm({ ...form, assignedVehicleId: Number(e.target.value) })} /></Field>
+          
           <Field label="Durum">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as Driver["status"] })}>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "active"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
               <option value="active">Aktif</option>
               <option value="on_trip">Seferde</option>
-              <option value="off_duty">Izinli</option>
+              <option value="off_duty">İzinli</option>
               <option value="inactive">Pasif</option>
             </select>
           </Field>
         </div>
       </FormDialog>
-
-      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Sofor Sil" message={`"${deleteItem?.first_name} ${deleteItem?.last_name}" soforunu silmek istediginize emin misiniz?`} />
+      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Şoför Sil" message={`"${deleteItem?.firstName} ${deleteItem?.lastName}" kullanıcısını silmek istediğinize emin misiniz?`} />
     </div>
   );
 }

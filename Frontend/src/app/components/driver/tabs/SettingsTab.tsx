@@ -5,7 +5,20 @@ import { Button } from "../../ui/button";
 import { Field } from "../../shared/FormDialog";
 import { toast } from "sonner";
 import { Save, User, Bell, Shield } from "lucide-react";
-import { currentDriver } from "../DriverPanel";
+const currentDriver = {
+  id: 1,
+  name: "Ahmet Yilmaz",
+  first_name: "Ahmet",
+  last_name: "Yilmaz",
+  tc: "12345678901",
+  phone: "555 123 4567",
+  email: "ahmet@mail.com",
+  license_type: "E",
+  company_id: 101, 
+  department_id: 201, 
+  points: 100,
+  status: "active" as const
+};
 
 export function SettingsTab() {
   const [profileForm, setProfileForm] = useState({

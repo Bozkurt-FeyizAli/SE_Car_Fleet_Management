@@ -3,13 +3,8 @@ import React, { useState, useEffect } from "react";
 import {
   Building2, Car, MapPin, Users, Truck, Settings, AlertTriangle, Zap, User,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom"; // react-router-dom'dan geldiğinden emin ol
-
-// Alt sekmelerin (ProfileTab, VehicleTab vb.) beklediği exportlar
-import { drivers, companies } from "../../data/mockData";
-export const CURRENT_DRIVER_ID = 1;
-export const currentDriver = drivers.find(d => d.id === CURRENT_DRIVER_ID) || drivers[0];
-export const driverCompany = companies.find(c => c.id === currentDriver.company_id) || companies[0];
+import { useNavigate } from "react-router-dom"; 
+import { ApiUser } from "../manager/tabs/DriversTab";
 
 // Tab bileşenlerini içe aktarırken yolların doğruluğunu kontrol et
 import { ProfileTab } from "./tabs/ProfileTab";
@@ -35,19 +30,35 @@ const tabs = [
 export function DriverPanel() {
   const [activeTab, setActiveTab] = useState("profile");
   const [userData, setUserData] = useState<any>(null);
+  const [fullUserRecord, setFullUserRecord] = useState<ApiUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     // Giriş verilerini al
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setUserData(JSON.parse(storedUser));
+      const parsedUser = JSON.parse(storedUser);
+      setUserData(parsedUser);
+      
+      // Fetch full details from live API to display in ProfileTab
+      fetch("/api/User")
+        .then(res => res.json())
+        .then((users: ApiUser[]) => {
+          const match = users.find(u => u.email === parsedUser.email);
+          if (match) {
+            setFullUserRecord(match);
+          }
+        })
+        .catch(err => console.error("Could not fetch full user details:", err))
+        .finally(() => setIsLoading(false));
+
     } else {
       navigate('/');
     }
   }, [navigate]);
 
-  if (!userData) {
+  if (!userData || isLoading) {
     return <div className="h-screen bg-slate-950 flex items-center justify-center text-white">Yükleniyor...</div>;
   }
 
@@ -60,12 +71,12 @@ export function DriverPanel() {
           </div>
           <div>
             <h1 className="text-lg font-bold">Şoför Paneli</h1>
-            <p className="text-xs text-muted-foreground">{userData.userName} &middot; {userData.email}</p>
+            <p className="text-xs text-muted-foreground">{fullUserRecord?.firstName || userData.userName} &middot; {userData.email}</p>
           </div>
         </div>
         <button 
           onClick={() => { localStorage.clear(); navigate('/'); }}
-          className="text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-md hover:bg-red-500/20"
+          className="text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-md hover:bg-red-500/20 transition-colors"
         >
           Çıkış Yap
         </button>
@@ -80,7 +91,7 @@ export function DriverPanel() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm transition-all ${
-                  activeTab === tab.id ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground"
+                  activeTab === tab.id ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground hover:text-emerald-500"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -92,7 +103,7 @@ export function DriverPanel() {
       </div>
 
       <main className="p-4 sm:p-8">
-        {activeTab === "profile" && <ProfileTab />}
+        {activeTab === "profile" && <ProfileTab user={fullUserRecord} />}
         {activeTab === "company" && <CompanyTab />}
         {activeTab === "vehicle" && <VehicleTab />}
         {activeTab === "trips" && <TripsTab />}

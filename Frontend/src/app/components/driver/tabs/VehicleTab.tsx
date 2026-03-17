@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Car, Truck, Calendar, FileText, Shield, Clock, Building2, Gauge, MapPin, DollarSign } from "lucide-react";
 import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
-import { vehicles, getCompanyName } from "../../../data/mockData";
-import { currentDriver } from "../DriverPanel";
+import { ApiVehicle } from "../../manager/tabs/VehiclesTab";
+import { ApiUser } from "../../system-admin/tabs/DriversTab";
 
 function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: React.ReactNode }) {
   return (
@@ -19,7 +19,53 @@ function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; valu
 }
 
 export function VehicleTab() {
-  const vehicle = vehicles.find(v => v.current_driver_id === currentDriver.id);
+  const [vehicle, setVehicle] = useState<ApiVehicle | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadAssignedVehicle() {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error("No auth token");
+
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        
+        const decodedToken = JSON.parse(jsonPayload);
+        const email = decodedToken.email || decodedToken["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"] || decodedToken.name;
+
+        // Fetch users to find current driver
+        const userRes = await fetch("/api/User");
+        if (!userRes.ok) throw new Error("Failed to load users");
+        const users: ApiUser[] = await userRes.json();
+        const currentUser = users.find(u => u.email === email);
+
+        if (currentUser && currentUser.assignedVehicleId) {
+          const vRes = await fetch(`/api/Vehicle/${currentUser.assignedVehicleId}`);
+          if (vRes.ok) {
+            const vData = await vRes.json();
+            setVehicle(vData);
+          }
+        }
+      } catch (err) {
+        console.error("Araç bilgisi yüklenemedi", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAssignedVehicle();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p>Araç bilgisi yükleniyor...</p>
+      </div>
+    );
+  }
 
   if (!vehicle) {
     return (
@@ -34,20 +80,18 @@ export function VehicleTab() {
     <div>
       <h2 className="mb-4">Aracim</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <InfoCard icon={Car} label="Plaka" value={vehicle.plate_number} />
-        <InfoCard icon={Truck} label="Marka / Model" value={`${vehicle.brand} ${vehicle.model}`} />
+        <InfoCard icon={Car} label="Plaka" value={vehicle.plateNumber} />
+        <InfoCard icon={Truck} label="Marka / Model" value={vehicle.brandModel || "—"} />
         <InfoCard icon={Calendar} label="Model Yili" value={vehicle.year} />
-        <InfoCard icon={Car} label="Arac Tipi" value={vehicle.vehicle_type} />
-        <InfoCard icon={FileText} label="Belge No" value={vehicle.document_number} />
-        <InfoCard icon={Gauge} label="Kapasite" value={`${vehicle.capacity_kg.toLocaleString("tr-TR")} kg`} />
-        <InfoCard icon={Shield} label="Kasko Bitis" value={new Date(vehicle.casco_expiry).toLocaleDateString("tr-TR")} />
-        <InfoCard icon={Shield} label="Sigorta Bitis" value={new Date(vehicle.insurance_expiry).toLocaleDateString("tr-TR")} />
-        <InfoCard icon={Calendar} label="Muayene Bitis" value={new Date(vehicle.inspection_expiry).toLocaleDateString("tr-TR")} />
-        <InfoCard icon={Gauge} label="Sonraki Bakim" value={`${vehicle.next_maint_km.toLocaleString("tr-TR")} km`} />
-        <InfoCard icon={DollarSign} label="Taban Fiyat" value={`₺${vehicle.base_price.toLocaleString("tr-TR")}`} />
-        <InfoCard icon={Clock} label="Durum" value={<StatusBadge label={getStatusLabel(vehicle.status)} variant={getStatusVariant(vehicle.status)} />} />
-        <InfoCard icon={MapPin} label="GPS" value={vehicle.gps_data ?? "Veri yok"} />
-        <InfoCard icon={Building2} label="Sirket" value={getCompanyName(vehicle.company_id)} />
+        <InfoCard icon={Car} label="Arac Tipi" value={vehicle.vehicleType || "Belirtilmemiş"} />
+        <InfoCard icon={FileText} label="Belge No" value={vehicle.registrationNumber || "—"} />
+        <InfoCard icon={Gauge} label="Kapasite" value={`${(vehicle.capacityKg || 0).toLocaleString("tr-TR")} kg`} />
+        <InfoCard icon={Shield} label="Kasko Bitis" value={vehicle.cascoEndDate ? new Date(vehicle.cascoEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Shield} label="Sigorta Bitis" value={vehicle.insuranceEndDate ? new Date(vehicle.insuranceEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Calendar} label="Muayene Bitis" value={vehicle.inspectionEndDate ? new Date(vehicle.inspectionEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Gauge} label="Sonraki Bakim" value={`${(vehicle.nextMaintenanceKm || 0).toLocaleString("tr-TR")} km`} />
+        <InfoCard icon={DollarSign} label="Taban Fiyat" value={`₺${(vehicle.baseRentPrice || 0).toLocaleString("tr-TR")}`} />
+        <InfoCard icon={Clock} label="Durum" value={<StatusBadge label={vehicle.isActive ? "Aktif" : "Pasif"} variant={vehicle.isActive ? "success" : "neutral"} />} />
       </div>
     </div>
   );

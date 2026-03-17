@@ -8,7 +8,18 @@ import { Field } from "../../shared/FormDialog";
 import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
 import { DataTable, Column } from "../../shared/DataTable";
 import { maintenanceRequests, dailyChecks, vehicles, MaintenanceRequest, DailyCheck, nextId } from "../../../data/mockData";
-import { currentDriver } from "../DriverPanel";
+const currentDriver = {
+  id: 1,
+  name: "Ahmet Yilmaz",
+  tc: "12345678901",
+  phone: "555 123 4567",
+  email: "ahmet@mail.com",
+  license_type: "E",
+  company_id: 101, 
+  department_id: 201, 
+  points: 100,
+  status: "active" as const
+};
 import { toast } from "sonner";
 
 export function QuickActionsTab() {

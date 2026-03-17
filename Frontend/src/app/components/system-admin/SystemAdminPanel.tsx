@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import {
   LayoutDashboard, Building2, Users, Truck, Car, ArrowLeftRight, Shield, Settings, ClipboardList, ChevronLeft,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 import { DashboardTab } from "./tabs/DashboardTab";
 import { CompaniesTab } from "./tabs/CompaniesTab";
 import { UsersTab } from "./tabs/UsersTab";

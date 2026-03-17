@@ -1,17 +1,33 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Building2, Users, Truck, Car, ArrowLeftRight, AlertTriangle, TrendingUp, ClipboardList } from "lucide-react";
 import { StatCard } from "../../shared/StatCard";
 import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
-import { companies, users, drivers, vehicles, interCompanyRentals, auditLogs, trips, accidentReports, getCompanyName, getUserName } from "../../../data/mockData";
+import { interCompanyRentals, auditLogs, trips, accidentReports } from "../../../data/mockData";
+import { Company } from "./CompaniesTab";
+import { ApiUser } from "./DriversTab";
+import { ApiVehicle } from "./VehiclesTab";
 
 export function DashboardTab() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [users, setUsers] = useState<ApiUser[]>([]);
+  const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
+
+  useEffect(() => {
+    fetch("/api/Company").then(res => res.json()).then(setCompanies).catch(console.error);
+    fetch("/api/User").then(res => res.json()).then(setUsers).catch(console.error);
+    fetch("/api/Vehicle").then(res => res.json()).then(setVehicles).catch(console.error);
+  }, []);
+
   const activeCompanies = companies.filter(c => c.status === "active").length;
-  const activeDrivers = drivers.filter(d => d.status !== "inactive").length;
-  const activeVehicles = vehicles.filter(v => v.status !== "out_of_service").length;
+  const drivers = users.filter(u => u.roleId === 3 && u.email !== "admin@fleet.com");
+  const activeDrivers = drivers.filter(d => d.driverTripStatus !== "inactive").length;
+  const activeVehicles = vehicles.filter(v => v.isActive).length;
   const activeRentals = interCompanyRentals.filter(r => r.status === "active").length;
   const ongoingTrips = trips.filter(t => t.status === "in_progress").length;
   const openAccidents = accidentReports.filter(a => a.status !== "resolved").length;
-  const avgScore = drivers.length > 0 ? (drivers.reduce((s, d) => s + d.current_score, 0) / drivers.length).toFixed(1) : "0";
+  
+  const totalScore = drivers.reduce((s, d) => s + (d.driverScore || 0), 0);
+  const avgScore = drivers.length > 0 ? (totalScore / drivers.length).toFixed(1) : "0";
 
   return (
     <div className="space-y-6">
@@ -19,7 +35,7 @@ export function DashboardTab() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Building2} label="Aktif Sirketler" value={activeCompanies} subtext={`${companies.length} toplam`} color="bg-blue-600" />
-        <StatCard icon={Users} label="Toplam Kullanicilar" value={users.length} subtext={`${users.filter(u => u.role === "driver").length} sofor`} color="bg-violet-600" />
+        <StatCard icon={Users} label="Toplam Kullanicilar" value={users.length} subtext={`${users.filter(u => u.roleId === 3).length} sofor`} color="bg-violet-600" />
         <StatCard icon={Truck} label="Aktif Soforler" value={activeDrivers} subtext={`Ort. puan: ${avgScore}`} color="bg-emerald-600" />
         <StatCard icon={Car} label="Aktif Araclar" value={activeVehicles} subtext={`${vehicles.length} toplam`} color="bg-orange-600" />
         <StatCard icon={ArrowLeftRight} label="Aktif Kiralamalar" value={activeRentals} color="bg-cyan-600" />
@@ -40,7 +56,7 @@ export function DashboardTab() {
                 <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1">
                   <span className="text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString("tr-TR")}</span>
                   <StatusBadge label={log.action_type.replace(/_/g, " ")} variant={getStatusVariant(log.action_type.includes("accident") ? "major" : "active")} />
-                  <span className="text-xs text-muted-foreground">{getUserName(log.user_id)}</span>
+                  <span className="text-xs text-muted-foreground">{log.user_id}</span>
                 </div>
               </div>
             </div>
@@ -59,8 +75,8 @@ export function DashboardTab() {
                 <StatusBadge label={getStatusLabel(c.status)} variant={getStatusVariant(c.status)} />
               </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span>{drivers.filter(d => d.company_id === c.id).length} sofor</span>
-                <span>{vehicles.filter(v => v.company_id === c.id).length} arac</span>
+                <span>{drivers.length} toplam sofor</span>
+                <span>{vehicles.length} toplam arac</span>
               </div>
             </div>
           ))}

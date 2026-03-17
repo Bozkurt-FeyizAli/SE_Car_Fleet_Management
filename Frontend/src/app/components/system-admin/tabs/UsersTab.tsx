@@ -1,96 +1,169 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DataTable, Column } from "../../shared/DataTable";
-import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
+import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
-import { users, companies, User, nextId, getCompanyName } from "../../../data/mockData";
 import { toast } from "sonner";
+import { ApiUser } from "../../manager/tabs/DriversTab";
 
 export function UsersTab() {
-  const [data, setData] = useState([...users]);
-  const [editItem, setEditItem] = useState<User | null>(null);
+  const [data, setData] = useState<ApiUser[]>([]);
+  const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteItem, setDeleteItem] = useState<User | null>(null);
-  const [form, setForm] = useState({ full_name: "", email: "", role: "company_admin" as User["role"], company_id: "" as string, status: "active" as User["status"], phone: "" });
+  const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const getInitialForm = (): ApiUser => ({
+    roleId: null,
+    parentUserId: null,
+    firstName: "",
+    lastName: "",
+    email: "",
+    passwordHash: "",
+    phone: "",
+    tcIdentityNumber: "",
+    criminalRecord: "",
+    driverLicenseId: "",
+    driverScore: 80,
+    driverTripStatus: "active",
+    assignedVehicleId: null,
+  });
+
+  const [form, setForm] = useState<ApiUser>(getInitialForm());
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/User");
+      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
+      const list = await res.json();
+      setData(list);
+    } catch (e: any) {
+      toast.error(e.message || "Bir hata oluştu");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const openAdd = () => {
-    setForm({ full_name: "", email: "", role: "company_admin", company_id: "", status: "active", phone: "" });
+    setForm(getInitialForm());
     setEditItem(null);
     setShowForm(true);
   };
 
-  const openEdit = (item: User) => {
-    setForm({ full_name: item.full_name, email: item.email, role: item.role, company_id: item.company_id?.toString() ?? "", status: item.status, phone: item.phone ?? "" });
+  const openEdit = (item: ApiUser) => {
+    setForm({ ...item, passwordHash: "" });
     setEditItem(item);
     setShowForm(true);
   };
 
-  const handleSave = () => {
-    if (!form.full_name || !form.email) { toast.error("Zorunlu alanlari doldurun"); return; }
-    if (editItem) {
-      const updated = data.map(u => u.id === editItem.id ? { ...u, full_name: form.full_name, email: form.email, role: form.role, company_id: form.company_id ? Number(form.company_id) : null, status: form.status, phone: form.phone } : u);
-      setData(updated);
-      users.splice(0, users.length, ...updated);
-      toast.success("Kullanici guncellendi");
-    } else {
-      const newItem: User = { id: nextId(), full_name: form.full_name, email: form.email, password_hash: "xxx", role: form.role, company_id: form.company_id ? Number(form.company_id) : null, department_id: null, status: form.status, phone: form.phone, created_at: new Date().toISOString() };
-      const updated = [...data, newItem];
-      setData(updated);
-      users.splice(0, users.length, ...updated);
-      toast.success("Kullanici eklendi");
+  const handleSave = async () => {
+    if (!form.firstName || !form.email) {
+      toast.error("Ad ve E-posta zorunludur");
+      return;
     }
-    setShowForm(false);
+
+    const payload = {
+      ...form,
+      roleId: form.roleId ? Number(form.roleId) : null,
+      parentUserId: form.parentUserId ? Number(form.parentUserId) : null,
+      driverScore: form.driverScore ? Number(form.driverScore) : null,
+      assignedVehicleId: form.assignedVehicleId ? Number(form.assignedVehicleId) : null,
+    };
+
+    try {
+      const method = editItem && editItem.id ? "PUT" : "POST";
+      const endpoint = editItem && editItem.id ? `/api/User/${editItem.id}` : `/api/User`;
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
+
+      toast.success(editItem ? "Kullanıcı güncellendi" : "Kullanıcı eklendi");
+      setShowForm(false);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
   };
 
-  const handleDelete = () => {
-    if (!deleteItem) return;
-    const updated = data.filter(u => u.id !== deleteItem.id);
-    setData(updated);
-    users.splice(0, users.length, ...updated);
-    setDeleteItem(null);
-    toast.success("Kullanici silindi");
+  const handleDelete = async () => {
+    if (!deleteItem || !deleteItem.id) return;
+    try {
+      const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error("Silme işlemi başarısız");
+      toast.success("Kullanıcı silindi");
+      setDeleteItem(null);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
   };
 
-  const columns: Column<User>[] = [
-    { key: "name", header: "Ad Soyad", render: (u) => u.full_name },
+  const columns: Column<ApiUser>[] = [
+    { key: "name", header: "Ad Soyad", render: (u) => `${u.firstName || ""} ${u.lastName || ""}` },
     { key: "email", header: "E-posta", render: (u) => <span className="text-blue-600">{u.email}</span> },
-    { key: "role", header: "Rol", render: (u) => <StatusBadge label={getStatusLabel(u.role)} variant="info" /> },
-    { key: "company", header: "Sirket", render: (u) => getCompanyName(u.company_id) },
-    { key: "status", header: "Durum", render: (u) => <StatusBadge label={getStatusLabel(u.status)} variant={getStatusVariant(u.status)} /> },
+    { key: "role", header: "Rol", render: (u) => {
+        let label = "Bilinmeyen";
+        if (u.roleId === 0) label = "Süper Admin";
+        if (u.roleId === 1) label = "Sistem Yöneticisi";
+        if (u.roleId === 2) label = "Şirket Yöneticisi";
+        if (u.roleId === 3) label = "Şoför";
+        return <StatusBadge label={label} variant="info" />;
+      } 
+    },
+    { key: "status", header: "Durum", render: (u) => {
+        const status = u.driverTripStatus || "active";
+        return <StatusBadge label={status === "active" ? "Aktif" : "Pasif"} variant={status === "active" ? "success" : "neutral"} />;
+      }
+    },
   ];
 
   return (
     <div>
-      <h2 className="mb-4">Kullanicilar</h2>
-      <DataTable data={data} columns={columns} searchPlaceholder="Kullanici ara..." searchKeys={["full_name", "email"]} onAdd={openAdd} addLabel="Kullanici Ekle" onEdit={openEdit} onDelete={(u) => setDeleteItem(u)} />
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Kullanıcılar (Tümü)</h2>
+      <DataTable 
+        data={data} 
+        columns={columns} 
+        searchPlaceholder="Kullanıcı ara..." 
+        searchKeys={["firstName", "lastName", "email"]} 
+        onAdd={openAdd} 
+        addLabel="Kullanıcı Ekle" 
+        onEdit={openEdit} 
+        onDelete={(u) => setDeleteItem(u)} 
+      />
 
-      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Kullanici Duzenle" : "Yeni Kullanici"} onSubmit={handleSave}>
-        <Field label="Ad Soyad *"><Input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} /></Field>
-        <Field label="E-posta *"><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-        <Field label="Telefon"><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
-        <Field label="Rol">
-          <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as User["role"] })}>
-            <option value="system_admin">Sistem Yoneticisi</option>
-            <option value="company_admin">Sirket Yoneticisi</option>
-            <option value="department_admin">Departman Yoneticisi</option>
-            <option value="driver">Sofor</option>
-          </select>
-        </Field>
-        <Field label="Sirket">
-          <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.company_id} onChange={e => setForm({ ...form, company_id: e.target.value })}>
-            <option value="">— Yok (Sistem Yoneticisi) —</option>
-            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Durum">
-          <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as User["status"] })}>
-            <option value="active">Aktif</option>
-            <option value="inactive">Pasif</option>
-          </select>
-        </Field>
+      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Kullanıcı Düzenle" : "Yeni Kullanıcı"} onSubmit={handleSave} wide>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Ad *"><Input value={form.firstName || ""} onChange={e => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Soyad"><Input value={form.lastName || ""} onChange={e => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="E-posta *"><Input type="email" value={form.email || ""} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
+          <Field label="Rol">
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.roleId ?? ""} onChange={e => setForm({ ...form, roleId: Number(e.target.value) })}>
+              <option value="0">Süper Admin</option>
+              <option value="1">Sistem Yöneticisi</option>
+              <option value="2">Şirket Yöneticisi</option>
+              <option value="3">Şoför</option>
+            </select>
+          </Field>
+          <Field label="Durum">
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "active"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
+              <option value="active">Aktif</option>
+              <option value="inactive">Pasif</option>
+            </select>
+          </Field>
+        </div>
       </FormDialog>
-
-      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Kullanici Sil" message={`"${deleteItem?.full_name}" kullanicisini silmek istediginize emin misiniz?`} />
+      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Kullanıcı Sil" message={`"${deleteItem?.firstName}" kullanıcısını silmek istediğinize emin misiniz?`} />
     </div>
   );
 }
