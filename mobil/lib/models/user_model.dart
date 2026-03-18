@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 enum UserRole {
+
   superAdmin,
   company,
   driver;
@@ -70,13 +73,13 @@ class UserModel {
     this.token,
   });
 
-  /// Mock servis JSON yanıtından UserModel oluşturur.
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    int roleId = (json['roleId'] as num?)?.toInt() ?? 2;
     return UserModel(
-      id: json['id'] as String,
+      id: json['id'].toString(),
       name: json['name'] as String,
       email: json['email'] as String,
-      role: UserRole.fromString(json['role'] as String),
+      role: UserRole.fromRoleId(roleId),
       token: json['token'] as String?,
     );
   }
@@ -92,22 +95,50 @@ class UserModel {
   ///   "roleId": 1
   /// }
   factory UserModel.fromApiResponse(Map<String, dynamic> json) {
+    int? roleId = (json['roleId'] as num?)?.toInt();
+    
+    // Eğer roleId API yanıtından gelmemişse (örn. eski sunucu versiyonu), JWT token'dan oku
+    if (roleId == null && json['token'] != null) {
+      try {
+        final tokenStr = json['token'] as String;
+        final parts = tokenStr.split('.');
+        if (parts.length == 3) {
+          final payload = ascii.decode(base64.decode(base64.normalize(parts[1])));
+          final payloadMap = jsonDecode(payload) as Map<String, dynamic>;
+          
+          // ClaimTypes.Role, genelde URL şeklinde gelir veya "role" olarak gelir
+          final roleClaim = payloadMap['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] 
+                            ?? payloadMap['role'];
+          
+          if (roleClaim != null) {
+            roleId = int.tryParse(roleClaim.toString());
+          }
+        }
+      } catch (e) {
+        print('Token decode hatası: $e');
+      }
+    }
+    
+    // Hala null ise varsayılan olarak şirket yöneticisi (2) yap
+    roleId ??= 2;
+
     return UserModel(
-      id: json['userId'].toString(),
-      name: '${json['firstName']} ${json['lastName']}',
+      id: json['userId']?.toString() ?? json['id']?.toString() ?? '0',
+      name: '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim(),
       email: json['email'] as String,
-      role: UserRole.fromRoleId(json['roleId'] as int),
+      role: UserRole.fromRoleId(roleId),
       token: json['token'] as String?,
     );
   }
 
   /// UserModel'i JSON'a çevirir.
+  /// roleId'yi int olarak saklar — fromJson() ile uyumlu.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'email': email,
-      'role': role.toJsonString(),
+      'roleId': role.toRoleId(),
       if (token != null) 'token': token,
     };
   }

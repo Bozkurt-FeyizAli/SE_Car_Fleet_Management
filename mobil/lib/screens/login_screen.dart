@@ -4,7 +4,6 @@ import '../services/auth_service.dart';
 import 'admin_home_screen.dart';
 import 'company_home_screen.dart';
 import 'driver_home_screen.dart';
-import 'role_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final AuthService authService;
@@ -223,39 +222,6 @@ class _LoginScreenState extends State<LoginScreen>
                                   _buildLoginButton(),
                                 ],
                               ),
-                            ),
-
-                            const SizedBox(height: 24),
-
-                            // ── Kaydol Linki ──
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  'Hesabınız yok mu? ',
-                                  style: TextStyle(fontSize: 13, color: _textMuted),
-                                ),
-                                GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => RoleSelectionScreen(
-                                          authService: widget.authService,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: const Text(
-                                    'Kaydol',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: _accentBlue,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ),
