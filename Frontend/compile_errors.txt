@@ -1,0 +1,12 @@
+src/app/components/manager/tabs/DashboardTab.tsx(19,68): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(17,5): error TS2353: Object literal may only specify known properties, and 'roleId' does not exist in type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(72,20): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(72,41): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(73,26): error TS2339: Property 'parentUserId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(73,53): error TS2339: Property 'parentUserId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(116,15): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(116,33): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(117,15): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(118,15): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(150,121): error TS2339: Property 'roleId' does not exist on type 'ApiUser'.
+src/app/components/system-admin/tabs/UsersTab.tsx(150,169): error TS2353: Object literal may only specify known properties, and 'roleId' does not exist in type 'SetStateAction<ApiUser>'.

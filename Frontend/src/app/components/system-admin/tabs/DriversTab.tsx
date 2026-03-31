@@ -4,6 +4,7 @@ import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
+import { ApiVehicle } from "../../manager/tabs/VehiclesTab";
 
 export interface ApiUser {
   id?: number;
@@ -28,6 +29,7 @@ export function DriversTab() {
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
 
   const getInitialForm = (): ApiUser => ({
     roleId: null,
@@ -61,8 +63,21 @@ export function DriversTab() {
     }
   };
 
+  const fetchVehicles = async () => {
+    try {
+      const res = await fetch("/api/v1/vehicles");
+      if (res.ok) {
+        const list: ApiVehicle[] = await res.json();
+        setVehicles(list);
+      }
+    } catch (e) {
+      console.error("Araçlar yüklenemedi", e);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchVehicles();
   }, []);
 
   const openAdd = () => {
@@ -132,7 +147,12 @@ export function DriversTab() {
         return <span className={score >= 80 ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-600"}>{score}</span>;
       } 
     },
-    { key: "vehicle", header: "Araç ID", render: (d) => d.assignedVehicleId || "—" },
+    { key: "vehicle", header: "Araç", render: (d) => {
+        if (!d.assignedVehicleId) return "—";
+        const v = vehicles.find(x => x.id === d.assignedVehicleId);
+        return v ? v.plate : d.assignedVehicleId;
+      } 
+    },
     { key: "status", header: "Durum", render: (d) => {
         const status = d.driverTripStatus || "inactive";
         const variant = status === "active" ? "success" : status === "on_trip" ? "info" : "neutral";
@@ -172,7 +192,18 @@ export function DriversTab() {
           </Field>
           <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentUserId || ""} onChange={e => setForm({ ...form, parentUserId: Number(e.target.value) })} /></Field>
           <Field label="Sürücü Puanı"><Input type="number" value={form.driverScore || 0} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
-          <Field label="Atanan Araç ID"><Input type="number" value={form.assignedVehicleId || ""} onChange={e => setForm({ ...form, assignedVehicleId: Number(e.target.value) })} /></Field>
+          <Field label="Atanan Araç">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={form.assignedVehicleId || ""} 
+              onChange={e => setForm({ ...form, assignedVehicleId: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">Araç Seçiniz...</option>
+              {vehicles.map(v => (
+                <option key={v.id || v.plate} value={v.id}>{v.plate}</option>
+              ))}
+            </select>
+          </Field>
           
           <Field label="Durum">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "active"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>

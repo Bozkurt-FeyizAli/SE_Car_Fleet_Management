@@ -15,18 +15,20 @@ export function UsersTab() {
 
   const getInitialForm = (): ApiUser => ({
     roleId: null,
-    parentUserId: null,
+    parentManagerId: null,
+    companyId: null,
     firstName: "",
     lastName: "",
     email: "",
     passwordHash: "",
-    phone: "",
+    phoneNumber: "",
     tcIdentityNumber: "",
     criminalRecord: "",
     driverLicenseId: "",
-    driverScore: 80,
-    driverTripStatus: "active",
-    assignedVehicleId: null,
+    driverLicenseType: "B",
+    driverScore: 100,
+    driverTripStatus: "Boşta",
+    assignedVehiclePlate: "",
   });
 
   const [form, setForm] = useState<ApiUser>(getInitialForm());
@@ -67,13 +69,20 @@ export function UsersTab() {
       return;
     }
 
-    const payload = {
-      ...form,
-      roleId: form.roleId ? Number(form.roleId) : null,
-      parentUserId: form.parentUserId ? Number(form.parentUserId) : null,
-      driverScore: form.driverScore ? Number(form.driverScore) : null,
-      assignedVehicleId: form.assignedVehicleId ? Number(form.assignedVehicleId) : null,
+    const payload: any = {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phoneNumber: form.phoneNumber,
+      tcIdentityNumber: form.tcIdentityNumber,
+      criminalRecord: form.criminalRecord,
+      companyId: form.companyId ? Number(form.companyId) : 1,
+      parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
     };
+
+    if (form.passwordHash && form.passwordHash.trim() !== "") {
+      payload.passwordHash = form.passwordHash;
+    }
 
     try {
       const method = editItem && editItem.id ? "PUT" : "POST";
@@ -113,8 +122,7 @@ export function UsersTab() {
     { key: "email", header: "E-posta", render: (u) => <span className="text-blue-600">{u.email}</span> },
     { key: "role", header: "Rol", render: (u) => {
         let label = "Bilinmeyen";
-        if (u.roleId === 0) label = "Süper Admin";
-        if (u.roleId === 1) label = "Sistem Yöneticisi";
+        if (u.roleId === 0 || u.roleId === 1) label = "Süper Admin";
         if (u.roleId === 2) label = "Şirket Yöneticisi";
         if (u.roleId === 3) label = "Şoför";
         return <StatusBadge label={label} variant="info" />;
@@ -143,22 +151,32 @@ export function UsersTab() {
 
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Kullanıcı Düzenle" : "Yeni Kullanıcı"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Ad *"><Input value={form.firstName || ""} onChange={e => setForm({ ...form, firstName: e.target.value })} /></Field>
-          <Field label="Soyad"><Input value={form.lastName || ""} onChange={e => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="İsim *"><Input value={form.firstName || ""} onChange={e => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Soyisim"><Input value={form.lastName || ""} onChange={e => setForm({ ...form, lastName: e.target.value })} /></Field>
           <Field label="E-posta *"><Input type="email" value={form.email || ""} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
+          <Field label="Telefon"><Input value={form.phoneNumber || ""} onChange={e => setForm({ ...form, phoneNumber: e.target.value })} /></Field>
+          <Field label="Tc (TC Kimlik No)"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
+          <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
+          <Field label="Ehliyet No"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
+          <Field label="Ehliyet Tipi"><Input value={form.driverLicenseType || ""} placeholder="B, D1 vb." onChange={e => setForm({ ...form, driverLicenseType: e.target.value })} /></Field>
           <Field label="Rol">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.roleId ?? ""} onChange={e => setForm({ ...form, roleId: Number(e.target.value) })}>
               <option value="0">Süper Admin</option>
-              <option value="1">Sistem Yöneticisi</option>
+              <option value="1">Süper Admin (Sistem)</option>
               <option value="2">Şirket Yöneticisi</option>
-              <option value="3">Şoför</option>
+              <option value="3">Sürücü</option>
             </select>
           </Field>
+          <Field label="Şirket ID"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
+          <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentManagerId || ""} onChange={e => setForm({ ...form, parentManagerId: Number(e.target.value) })} /></Field>
+          <Field label="Puan"><Input type="number" value={form.driverScore ?? 100} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
+          <Field label="Atanan Araç Plakası"><Input value={form.assignedVehiclePlate || ""} onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })} /></Field>
           <Field label="Durum">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "active"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
-              <option value="active">Aktif</option>
-              <option value="inactive">Pasif</option>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "Boşta"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
+              <option value="Boşta">Boşta</option>
+              <option value="Seferde">Seferde</option>
+              <option value="Pasif">Pasif</option>
             </select>
           </Field>
         </div>
