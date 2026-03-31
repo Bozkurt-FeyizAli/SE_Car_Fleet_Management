@@ -34,9 +34,9 @@ export function ProfileTab({ user }: ProfileTabProps) {
             <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1.5 rounded-full font-medium">
               {statusLabel}
             </span>
-            {user.assignedVehicleId && (
+            {user.assignedVehiclePlate && (
               <span className="bg-slate-100 text-slate-800 text-xs px-3 py-1.5 rounded-full font-medium">
-                Araç ID: {user.assignedVehicleId}
+                Araç Plakası: {user.assignedVehiclePlate}
               </span>
             )}
           </div>
@@ -50,7 +50,7 @@ export function ProfileTab({ user }: ProfileTabProps) {
           <div className="space-y-3">
             <InfoField label="TC Kimlik No" value={user.tcIdentityNumber || "Belirtilmedi"} />
             <InfoField label="E-posta" value={user.email || "Belirtilmedi"} />
-            <InfoField label="Telefon" value={user.phone || "Belirtilmedi"} />
+            <InfoField label="Telefon" value={user.phoneNumber || "Belirtilmedi"} />
             <InfoField label="Sicil Kaydı" value={user.criminalRecord || "Temiz"} />
           </div>
         </div>
@@ -60,8 +60,8 @@ export function ProfileTab({ user }: ProfileTabProps) {
           <h3 className="text-lg font-semibold mb-4 border-b pb-2">Ehliyet & Yetkinlik</h3>
           <div className="space-y-3">
             <InfoField label="Ehliyet No" value={user.driverLicenseId || "Belirtilmedi"} />
-            <InfoField label="Rol ID" value={user.roleId?.toString() || "Bilinmiyor"} />
-            <InfoField label="Bağlı Yönetici ID" value={user.parentUserId?.toString() || "Bilinmiyor"} />
+            <InfoField label="Rol" value="Sürücü" />
+            <InfoField label="Bağlı Yönetici ID" value={user.parentManagerId?.toString() || "Bilinmiyor"} />
           </div>
         </div>
       </div>

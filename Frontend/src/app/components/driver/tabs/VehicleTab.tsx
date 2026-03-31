@@ -44,10 +44,11 @@ export function VehicleTab() {
         const currentUser = users.find(u => u.email === email);
 
         if (currentUser && currentUser.assignedVehicleId) {
-          const vRes = await fetch(`/api/Vehicle/${currentUser.assignedVehicleId}`);
+          const vRes = await fetch(`/api/v1/vehicles`);
           if (vRes.ok) {
-            const vData = await vRes.json();
-            setVehicle(vData);
+            const vData: ApiVehicle[] = await vRes.json();
+            const matched = vData.find(v => v.id === currentUser.assignedVehicleId);
+            setVehicle(matched || null);
           }
         }
       } catch (err) {
@@ -80,16 +81,14 @@ export function VehicleTab() {
     <div>
       <h2 className="mb-4">Aracim</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <InfoCard icon={Car} label="Plaka" value={vehicle.plateNumber} />
-        <InfoCard icon={Truck} label="Marka / Model" value={vehicle.brandModel || "—"} />
-        <InfoCard icon={Calendar} label="Model Yili" value={vehicle.year} />
-        <InfoCard icon={Car} label="Arac Tipi" value={vehicle.vehicleType || "Belirtilmemiş"} />
-        <InfoCard icon={FileText} label="Belge No" value={vehicle.registrationNumber || "—"} />
-        <InfoCard icon={Gauge} label="Kapasite" value={`${(vehicle.capacityKg || 0).toLocaleString("tr-TR")} kg`} />
-        <InfoCard icon={Shield} label="Kasko Bitis" value={vehicle.cascoEndDate ? new Date(vehicle.cascoEndDate).toLocaleDateString("tr-TR") : "—"} />
-        <InfoCard icon={Shield} label="Sigorta Bitis" value={vehicle.insuranceEndDate ? new Date(vehicle.insuranceEndDate).toLocaleDateString("tr-TR") : "—"} />
-        <InfoCard icon={Calendar} label="Muayene Bitis" value={vehicle.inspectionEndDate ? new Date(vehicle.inspectionEndDate).toLocaleDateString("tr-TR") : "—"} />
-        <InfoCard icon={Gauge} label="Sonraki Bakim" value={`${(vehicle.nextMaintenanceKm || 0).toLocaleString("tr-TR")} km`} />
+        <InfoCard icon={Car} label="Plaka" value={vehicle.plate} />
+        <InfoCard icon={FileText} label="Ruhsat No" value={vehicle.registrationNumber || "—"} />
+        <InfoCard icon={Gauge} label="Anlık Kilometre" value={`${(vehicle.currentKm || 0).toLocaleString("tr-TR")} km`} />
+        <InfoCard icon={DollarSign} label="Hasar Kaydı" value={`₺${(vehicle.damageRecordAmount || 0).toLocaleString("tr-TR")}`} />
+        <InfoCard icon={Shield} label="Kasko Bitiş" value={vehicle.cascoEndDate ? new Date(vehicle.cascoEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Shield} label="Sigorta Bitiş" value={vehicle.insuranceEndDate ? new Date(vehicle.insuranceEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Calendar} label="Muayene Bitiş" value={vehicle.inspectionEndDate ? new Date(vehicle.inspectionEndDate).toLocaleDateString("tr-TR") : "—"} />
+        <InfoCard icon={Gauge} label="Sonraki Bakım" value={`${(vehicle.nextMaintenanceKm || 0).toLocaleString("tr-TR")} km`} />
         <InfoCard icon={DollarSign} label="Taban Fiyat" value={`₺${(vehicle.baseRentPrice || 0).toLocaleString("tr-TR")}`} />
         <InfoCard icon={Clock} label="Durum" value={<StatusBadge label={vehicle.isActive ? "Aktif" : "Pasif"} variant={vehicle.isActive ? "success" : "neutral"} />} />
       </div>
