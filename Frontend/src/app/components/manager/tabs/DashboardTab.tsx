@@ -15,12 +15,12 @@ export function DashboardTab() {
 
   useEffect(() => {
     fetch("/api/User")
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : [])
       .then((data: ApiUser[]) => setCompDrivers(data.filter(u => u.roleId === 3 && u.email !== "admin@fleet.com")))
       .catch(e => console.error(e));
 
-    fetch("/api/Vehicle")
-      .then(res => res.json())
+    fetch("/api/v1/vehicles")
+      .then(res => res.ok ? res.json() : [])
       .then((data: ApiVehicle[]) => setCompVehicles(data))
       .catch(e => console.error(e));
   }, []);

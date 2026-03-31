@@ -59,7 +59,7 @@ interface ConfirmDialogProps {
   onClose: () => void;
   onConfirm: () => void;
   title: string;
-  message: string;
+  message: React.ReactNode;
 }
 
 export function ConfirmDialog({ open, onClose, onConfirm, title, message }: ConfirmDialogProps) {

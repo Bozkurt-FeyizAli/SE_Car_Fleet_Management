@@ -1,0 +1,11 @@
+/api/Auth/login
+/api/v1/managers/{id}/permissions
+/api/v1/rentals/request
+/api/v1/rentals/my-rentals
+/api/v1/rentals/{id}/return
+/api/User
+/api/User/{id}
+/api/v1/vehicles
+/api/v1/vehicles/{plate}
+/api/v1/vehicles/available
+/api/v1/vehicles/{plate}/calculate-price
