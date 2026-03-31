@@ -31,9 +31,29 @@ const tabs = [
   { id: "settings", label: "Ayarlar", icon: Settings },
 ];
 
+import { apiFetch } from "../../utils/api";
+
 export function ManagerPanel() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [permissions, setPermissions] = useState<string[]>([]);
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    const user = userStr ? JSON.parse(userStr) : null;
+    const managerId = user?.id || currentCompanyAdmin.id;
+
+    apiFetch(`/v1/managers/${managerId}/permissions`)
+      .then(res => {
+        // Assume backend returns array of strings
+        const perms: string[] = Array.isArray(res) ? res : res?.permissions || res?.data || [];
+        setPermissions(perms);
+        localStorage.setItem('managerPermissions', JSON.stringify(perms));
+      })
+      .catch(err => {
+        console.error("Yetkiler alinamadi:", err);
+      });
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">

@@ -13,9 +13,26 @@ export function DashboardTab() {
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
 
   useEffect(() => {
-    fetch("/api/Company").then(res => res.json()).then(setCompanies).catch(console.error);
-    fetch("/api/User").then(res => res.json()).then(setUsers).catch(console.error);
-    fetch("/api/Vehicle").then(res => res.json()).then(setVehicles).catch(console.error);
+    fetch("/api/v1/companies")
+      .then(res => {
+        if (!res.ok) throw new Error("Companies API not found");
+        return res.json();
+      })
+      .then(setCompanies)
+      .catch(() => {
+        // Backend'de Company tablosu henüz yoksa veya 404 verirse mock datayı yükle
+        import("../../../data/mockData").then(m => setCompanies(m.companies as unknown as Company[]));
+      });
+
+    fetch("/api/User")
+      .then(res => res.ok ? res.json() : [])
+      .then(setUsers)
+      .catch(console.error);
+
+    fetch("/api/v1/vehicles")
+      .then(res => res.ok ? res.json() : [])
+      .then(setVehicles)
+      .catch(console.error);
   }, []);
 
   const activeCompanies = companies.filter(c => c.status === "active").length;
