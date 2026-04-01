@@ -23,7 +23,7 @@ namespace Backend.Controllers
         }
 
         [HttpGet("{id}")]
-        public async Task<IActionResult> GetUserById(uint id)
+        public async Task<IActionResult> GetUserById(int id)
         {
             var user = await _userService.GetUserByIdAsync(id);
             if (user == null) return NotFound();
@@ -38,7 +38,7 @@ namespace Backend.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateUser(uint id, [FromBody] UserRequest request)
+        public async Task<IActionResult> UpdateUser(int id, [FromBody] UserRequest request)
         {
             var success = await _userService.UpdateUserAsync(id, request);
             if (!success) return NotFound();
@@ -46,7 +46,7 @@ namespace Backend.Controllers
         }
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteUser(uint id)
+        public async Task<IActionResult> DeleteUser(int id)
         {
             var success = await _userService.DeleteUserAsync(id);
             if (!success) return NotFound();

@@ -15,6 +15,8 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IRentalService, RentalService>();
 builder.Services.AddScoped<IManagerService, ManagerService>();
+builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<IVehicleRegistrationService, VehicleRegistrationService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -26,8 +28,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    context.Database.EnsureDeleted(); // Eğer içinde uyumsuz tablo kaldıysa temizler
-    context.Database.EnsureCreated(); // Modellerine göre sıfırdan oluşturur
+    // context.Database.EnsureDeleted(); // Geliştirme aşamasında veritabanı şeması oturduğu için kapattık.
+    // context.Database.EnsureCreated(); // Veri kaybını önlemek için kapattık.
 }
 // Configure the HTTP request pipeline.
 

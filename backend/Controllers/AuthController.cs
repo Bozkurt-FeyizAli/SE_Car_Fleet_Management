@@ -43,10 +43,6 @@ namespace Backend.Controllers
                 return Unauthorized(new { message = "Invalid email or password." });
             }
 
-            if (user.Status != "active")
-            {
-                return Unauthorized(new { message = "Account is not active." });
-            }
 
             var token = GenerateJwtToken(user);
 
@@ -71,7 +67,8 @@ namespace Backend.Controllers
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.GivenName, user.FirstName),
                 new Claim(ClaimTypes.Surname, user.LastName),
-                new Claim(ClaimTypes.Role, user.RoleId.ToString())
+                new Claim(ClaimTypes.Role, "User"),
+                new Claim("CompanyId", user.CompanyId.ToString())
             };
 
 

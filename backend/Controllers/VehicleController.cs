@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/vehicles")]
     public class VehicleController : ControllerBase
     {
         private readonly IVehicleService _vehicleService;
@@ -22,10 +22,10 @@ namespace Backend.Controllers
             return Ok(vehicles);
         }
 
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetVehicleById(uint id)
+        [HttpGet("{plate}")]
+        public async Task<IActionResult> GetVehicleByPlate(string plate)
         {
-            var vehicle = await _vehicleService.GetVehicleByIdAsync(id);
+            var vehicle = await _vehicleService.GetVehicleByIdAsync(plate);
             if (vehicle == null) return NotFound();
             return Ok(vehicle);
         }
@@ -34,23 +34,38 @@ namespace Backend.Controllers
         public async Task<IActionResult> CreateVehicle([FromBody] VehicleRequest request)
         {
             var result = await _vehicleService.CreateVehicleAsync(request);
-            return CreatedAtAction(nameof(GetVehicleById), new { id = result.Id }, result);
+            return CreatedAtAction(nameof(GetVehicleByPlate), new { plate = result.Plate }, result);
         }
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateVehicle(uint id, [FromBody] VehicleRequest request)
+        [HttpPut("{plate}")]
+        public async Task<IActionResult> UpdateVehicle(string plate, [FromBody] VehicleRequest request)
         {
-            var success = await _vehicleService.UpdateVehicleAsync(id, request);
+            var success = await _vehicleService.UpdateVehicleAsync(plate, request);
             if (!success) return NotFound();
             return NoContent();
         }
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteVehicle(uint id)
+        [HttpDelete("{plate}")]
+        public async Task<IActionResult> DeleteVehicle(string plate)
         {
-            var success = await _vehicleService.DeleteVehicleAsync(id);
+            var success = await _vehicleService.DeleteVehicleAsync(plate);
             if (!success) return NotFound();
             return NoContent();
+        }
+
+        [HttpGet("available")]
+        public async Task<IActionResult> GetAvailableVehicles([FromQuery] int companyId, [FromQuery] string? type, [FromQuery] int? minCapacity)
+        {
+            var vehicles = await _vehicleService.GetAvailableVehiclesAsync(companyId, type, minCapacity);
+            return Ok(vehicles);
+        }
+
+        [HttpGet("{plate}/calculate-price")]
+        public async Task<IActionResult> CalculatePrice(string plate, [FromQuery] int days = 1)
+        {
+            var calculation = await _vehicleService.CalculatePriceAsync(plate, days);
+            if (calculation == null) return NotFound("Araç bulunamadı.");
+            return Ok(calculation);
         }
     }
 }

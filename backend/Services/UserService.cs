@@ -21,7 +21,7 @@ namespace Backend.Services
             return users.Select(u => new UserResponse(u));
         }
 
-        public async Task<UserResponse?> GetUserByIdAsync(uint id)
+        public async Task<UserResponse?> GetUserByIdAsync(int id)
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null) return null;
@@ -33,19 +33,14 @@ namespace Backend.Services
             var user = new User
             {
                 CompanyId = request.CompanyId,
-                RoleId = request.RoleId,
-                ParentUserId = request.ParentUserId,
+                ParentManagerId = request.ParentManagerId,
                 FirstName = request.FirstName,
                 LastName = request.LastName,
                 Email = request.Email,
                 PasswordHash = HashIfNeeded(request.PasswordHash),
-                Phone = request.Phone,
+                PhoneNumber = request.PhoneNumber,
                 TcIdentityNumber = request.TcIdentityNumber,
-                CriminalRecord = request.CriminalRecord,
-                DriverLicenseId = request.DriverLicenseId,
-                DriverScore = request.DriverScore,
-                DriverTripStatus = request.DriverTripStatus,
-                AssignedVehicleId = request.AssignedVehicleId
+                CriminalRecord = request.CriminalRecord
             };
 
             _context.Users.Add(user);
@@ -54,14 +49,13 @@ namespace Backend.Services
             return new UserResponse(user);
         }
 
-        public async Task<bool> UpdateUserAsync(uint id, UserRequest request)
+        public async Task<bool> UpdateUserAsync(int id, UserRequest request)
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null) return false;
 
             user.CompanyId = request.CompanyId;
-            user.RoleId = request.RoleId;
-            user.ParentUserId = request.ParentUserId;
+            user.ParentManagerId = request.ParentManagerId;
             user.FirstName = request.FirstName;
             user.LastName = request.LastName;
             user.Email = request.Email;
@@ -69,13 +63,9 @@ namespace Backend.Services
             {
                 user.PasswordHash = HashIfNeeded(request.PasswordHash);
             }
-            user.Phone = request.Phone;
+            user.PhoneNumber = request.PhoneNumber;
             user.TcIdentityNumber = request.TcIdentityNumber;
             user.CriminalRecord = request.CriminalRecord;
-            user.DriverLicenseId = request.DriverLicenseId;
-            user.DriverScore = request.DriverScore;
-            user.DriverTripStatus = request.DriverTripStatus;
-            user.AssignedVehicleId = request.AssignedVehicleId;
 
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
@@ -97,14 +87,12 @@ namespace Backend.Services
             return BCrypt.Net.BCrypt.HashPassword(passwordOrHash);
         }
 
-        public async Task<bool> DeleteUserAsync(uint id)
+        public async Task<bool> DeleteUserAsync(int id)
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null) return false;
 
-            // Soft delete
-            user.IsDeleted = true;
-            _context.Users.Update(user);
+            _context.Users.Remove(user);
             await _context.SaveChangesAsync();
             return true;
         }

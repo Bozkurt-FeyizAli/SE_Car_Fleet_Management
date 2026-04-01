@@ -21,9 +21,9 @@ namespace Backend.Services
             return vehicles.Select(v => new VehicleResponse(v));
         }
 
-        public async Task<VehicleResponse?> GetVehicleByIdAsync(uint id)
+        public async Task<VehicleResponse?> GetVehicleByIdAsync(string plate)
         {
-            var vehicle = await _context.Vehicles.FindAsync(id);
+            var vehicle = await _context.Vehicles.FindAsync(plate);
             if (vehicle == null) return null;
             return new VehicleResponse(vehicle);
         }
@@ -32,21 +32,17 @@ namespace Backend.Services
         {
             var vehicle = new Vehicle
             {
-                PlateNumber = request.PlateNumber,
+                Plate = request.Plate,
                 RegistrationNumber = request.RegistrationNumber,
-                BrandModel = request.BrandModel,
-                Year = request.Year,
-                VehicleType = request.VehicleType,
-                CapacityKg = request.CapacityKg,
+                CurrentKm = request.CurrentKm,
                 BaseRentPrice = request.BaseRentPrice,
-                InsuranceStartDate = request.InsuranceStartDate,
                 InsuranceEndDate = request.InsuranceEndDate,
-                CascoStartDate = request.CascoStartDate,
                 CascoEndDate = request.CascoEndDate,
-                InspectionStartDate = request.InspectionStartDate,
                 InspectionEndDate = request.InspectionEndDate,
                 NextMaintenanceKm = request.NextMaintenanceKm,
-                IsActive = request.IsActive
+                IsActive = request.IsActive,
+                CompanyId = request.CompanyId,
+                DamageRecordAmount = request.DamageRecordAmount
             };
 
             _context.Vehicles.Add(vehicle);
@@ -55,41 +51,87 @@ namespace Backend.Services
             return new VehicleResponse(vehicle);
         }
 
-        public async Task<bool> UpdateVehicleAsync(uint id, VehicleRequest request)
+        public async Task<bool> UpdateVehicleAsync(string plate, VehicleRequest request)
         {
-            var vehicle = await _context.Vehicles.FindAsync(id);
+            var vehicle = await _context.Vehicles.FindAsync(plate);
             if (vehicle == null) return false;
 
-            vehicle.PlateNumber = request.PlateNumber;
             vehicle.RegistrationNumber = request.RegistrationNumber;
-            vehicle.BrandModel = request.BrandModel;
-            vehicle.Year = request.Year;
-            vehicle.VehicleType = request.VehicleType;
-            vehicle.CapacityKg = request.CapacityKg;
+            vehicle.CurrentKm = request.CurrentKm;
             vehicle.BaseRentPrice = request.BaseRentPrice;
-            vehicle.InsuranceStartDate = request.InsuranceStartDate;
             vehicle.InsuranceEndDate = request.InsuranceEndDate;
-            vehicle.CascoStartDate = request.CascoStartDate;
             vehicle.CascoEndDate = request.CascoEndDate;
-            vehicle.InspectionStartDate = request.InspectionStartDate;
             vehicle.InspectionEndDate = request.InspectionEndDate;
             vehicle.NextMaintenanceKm = request.NextMaintenanceKm;
             vehicle.IsActive = request.IsActive;
+            vehicle.CompanyId = request.CompanyId;
+            vehicle.DamageRecordAmount = request.DamageRecordAmount;
 
             _context.Vehicles.Update(vehicle);
             await _context.SaveChangesAsync();
             return true;
         }
 
-        public async Task<bool> DeleteVehicleAsync(uint id)
+        public async Task<bool> DeleteVehicleAsync(string plate)
         {
-            var vehicle = await _context.Vehicles.FindAsync(id);
+            var vehicle = await _context.Vehicles.FindAsync(plate);
             if (vehicle == null) return false;
 
-            vehicle.IsDeleted = true; // Soft delete
-            _context.Vehicles.Update(vehicle);
+            _context.Vehicles.Remove(vehicle);
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        public async Task<IEnumerable<VehicleResponse>> GetAvailableVehiclesAsync(int companyId, string? type, int? minCapacity)
+        {
+            var query = _context.Vehicles
+                .Include(v => v.VehicleRegistration)
+                .Where(v => v.CompanyId != companyId && v.IsActive && v.Status == "Müsait");
+
+            if (!string.IsNullOrEmpty(type))
+            {
+                query = query.Where(v => v.VehicleRegistration != null && v.VehicleRegistration.Type == type);
+            }
+
+            if (minCapacity.HasValue)
+            {
+                query = query.Where(v => v.VehicleRegistration != null && v.VehicleRegistration.Capacity >= minCapacity.Value);
+            }
+
+            var vehicles = await query.ToListAsync();
+            return vehicles.Select(v => new VehicleResponse(v));
+        }
+
+        public async Task<PriceCalculationResponse?> CalculatePriceAsync(string plate, int days)
+        {
+            var vehicle = await _context.Vehicles.FindAsync(plate);
+            if (vehicle == null) return null;
+
+            var rules = await _context.RentalPricingRules.ToDictionaryAsync(r => r.ParameterName, r => r.Value);
+
+            decimal baseMultiplier = rules.GetValueOrDefault("taban_fiyat_katsayisi", 1.0m);
+            
+            // Example logic for KM multiplier
+            decimal kmMultiplier = 1.0m;
+            if (vehicle.CurrentKm > 100000) 
+                kmMultiplier = rules.GetValueOrDefault("km_carpani", 1.0m);
+            
+            // Example logic for Damage multiplier
+            decimal damageMultiplier = 1.0m;
+            if (vehicle.DamageRecordAmount == null || vehicle.DamageRecordAmount == 0)
+                damageMultiplier = rules.GetValueOrDefault("hasarsizlik_indirimi", 1.0m);
+
+            decimal finalBasePrice = vehicle.BaseRentPrice * baseMultiplier;
+            decimal pricePerDay = finalBasePrice * kmMultiplier * damageMultiplier;
+            decimal totalCost = pricePerDay * days;
+
+            return new PriceCalculationResponse
+            {
+                VehiclePlate = vehicle.Plate,
+                BasePrice = vehicle.BaseRentPrice,
+                FinalPricePerDay = pricePerDay,
+                TotalEstimatedPrice = totalCost
+            };
         }
     }
 }
