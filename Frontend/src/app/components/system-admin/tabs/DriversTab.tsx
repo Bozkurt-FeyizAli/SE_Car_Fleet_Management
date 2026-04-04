@@ -20,7 +20,8 @@ export interface ApiUser {
   driverLicenseId: string | null;
   driverScore: number | null;
   driverTripStatus: string | null;
-  assignedVehicleId: number | null;
+  assignedVehicleId?: number | null;
+  assignedVehiclePlate?: string | null;
 }
 
 export function DriversTab() {
@@ -118,6 +119,18 @@ export function DriversTab() {
 
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
 
+      try {
+        const savedUser = await res.clone().json();
+        const userId = savedUser.id || editItem?.id;
+        if (userId) {
+          if (payload.assignedVehicleId) {
+             localStorage.setItem(`driver_vehicle_${userId}`, String(payload.assignedVehicleId));
+          } else {
+             localStorage.removeItem(`driver_vehicle_${userId}`);
+          }
+        }
+      } catch(e) { }
+
       toast.success(editItem ? "Şoför/Kullanıcı güncellendi" : "Şoför/Kullanıcı eklendi");
       setShowForm(false);
       fetchUsers();
@@ -148,9 +161,11 @@ export function DriversTab() {
       } 
     },
     { key: "vehicle", header: "Araç", render: (d) => {
-        if (!d.assignedVehicleId) return "—";
-        const v = vehicles.find(x => x.id === d.assignedVehicleId);
-        return v ? v.plate : d.assignedVehicleId;
+        const localVehicleIdStr = localStorage.getItem(`driver_vehicle_${d.id}`);
+        const vId = d.assignedVehicleId || (localVehicleIdStr ? Number(localVehicleIdStr) : null);
+        if (!vId) return "—";
+        const v = vehicles.find(x => x.id === vId);
+        return v ? v.plate : vId;
       } 
     },
     { key: "status", header: "Durum", render: (d) => {

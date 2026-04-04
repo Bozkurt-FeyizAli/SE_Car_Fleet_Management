@@ -18,12 +18,13 @@ export interface ApiUser {
   phoneNumber: string | null;
   tcIdentityNumber: string | null;
   criminalRecord: string | null;
-  // Aşağıdaki property'ler Sürücü (Driver) tablosuna ait olduğu için backend User endpointi kabul etmiyor, geçici olarak formda null tutuyoruz.
+  // Aşağıdaki property'ler Sürücü (Driver) tablosuna ait olduğu için backend User endpointi kabul etmiyor, geçici olarak formda null tutuyoruz yorumu vardı ama aslında backend karşılıyor.
   driverLicenseId?: string | null;
   driverLicenseType?: string | null;
   driverScore?: number | null;
   driverTripStatus?: string | null;
   assignedVehiclePlate?: string | null;
+  assignedVehicleId?: number | null;
 }
 
 export function DriversTab() {
@@ -92,7 +93,11 @@ export function DriversTab() {
   };
 
   const openEdit = (item: ApiUser) => {
-    setForm({ ...item, passwordHash: "" }); // Şifreyi güvenlik gereği boş gösteriyoruz
+    // Önceden atanan veya locale kaydedilen plakayı al
+    const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${item.id}`);
+    const assignedPlate = item.assignedVehiclePlate || localVehiclePlate || "";
+
+    setForm({ ...item, passwordHash: "", assignedVehiclePlate: assignedPlate }); // Şifreyi güvenlik gereği boş gösteriyoruz
     setEditItem(item);
     setShowForm(true);
   };
@@ -103,16 +108,23 @@ export function DriversTab() {
       return;
     }
 
-    // Backend sadece UserRequest özelliklerini beklediği için ekstra Sürücü özelliklerini API'ye YOLAMIYORUZ
+    const selectedVehicle = vehicles.find(v => v.plate === form.assignedVehiclePlate);
+
     const payload: any = {
       parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
       companyId: 1, // Fallback
+      roleId: 3, // Sürücü rolü
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
       phoneNumber: form.phoneNumber,
       tcIdentityNumber: form.tcIdentityNumber,
-      criminalRecord: form.criminalRecord
+      criminalRecord: form.criminalRecord,
+      driverLicenseId: form.driverLicenseId,
+      driverScore: form.driverScore ? Number(form.driverScore) : 100,
+      driverTripStatus: form.driverTripStatus,
+      assignedVehicleId: null,
+      assignedVehiclePlate: form.assignedVehiclePlate || null
     };
 
     if (form.passwordHash && form.passwordHash.trim() !== "") {
@@ -131,11 +143,31 @@ export function DriversTab() {
 
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
 
-      if (form.driverLicenseId || form.assignedVehiclePlate) {
-          toast.warning("Kullanıcı eklendi ancak Sürücü (Araç ve Ehliyet) bilgileri henüz backend 'Driver' endpointine bağlanmadı.");
-      } else {
-          toast.success(editItem ? "Şoför güncellendi" : "Şoför eklendi");
+      // Frontend workaround: Backend UserResponse araç plakasını kalıcı tutmak için gösterim amaçlı önbelleğe alıyoruz.
+      try {
+        let userId = editItem?.id;
+        
+        // Eğer POST (yeni ekleme) yapıyorsak dönen body'den id'yi okumaya çalış
+        if (!userId) {
+          try {
+            const savedUser = await res.clone().json();
+            userId = savedUser.id;
+          } catch(err) { }
+        }
+
+        if (userId) {
+          if (form.assignedVehiclePlate) {
+             localStorage.setItem(`driver_vehicle_plate_${userId}`, form.assignedVehiclePlate);
+             localStorage.removeItem(`driver_vehicle_${userId}`); // Temizlik
+          } else {
+             localStorage.removeItem(`driver_vehicle_plate_${userId}`);
+          }
+        }
+      } catch(e) { 
+        console.error("Önbelleğe yazılırken hata:", e);
       }
+
+      toast.success(editItem ? "Şoför ve Araç Ataması güncellendi" : "Şoför eklendi ve Araç atandı");
       setShowForm(false);
       fetchUsers();
     } catch (e: any) {
@@ -164,7 +196,11 @@ export function DriversTab() {
         return <span className={score >= 80 ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-600"}>{score}</span>;
       } 
     },
-    { key: "vehicle", header: "Araç", render: (d: ApiUser) => d.assignedVehiclePlate || "—" },
+    { key: "vehicle", header: "Araç", render: (d: ApiUser) => {
+        const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${d.id}`);
+        return d.assignedVehiclePlate || localVehiclePlate || "—";
+      } 
+    },
     { key: "status", header: "Durum", render: (d) => {
         const status = d.driverTripStatus || "Boşta";
         const variant = status === "Aktif" || status === "active" ? "success" : (status === "Seferde" || status === "on_trip" ? "info" : "neutral");

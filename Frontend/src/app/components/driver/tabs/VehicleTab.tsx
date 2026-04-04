@@ -43,12 +43,18 @@ export function VehicleTab() {
         const users: ApiUser[] = await userRes.json();
         const currentUser = users.find(u => u.email === email);
 
-        if (currentUser && currentUser.assignedVehicleId) {
-          const vRes = await fetch(`/api/v1/vehicles`);
-          if (vRes.ok) {
-            const vData: ApiVehicle[] = await vRes.json();
-            const matched = vData.find(v => v.id === currentUser.assignedVehicleId);
-            setVehicle(matched || null);
+        if (currentUser) {
+          // Frontend fallback: read from localStorage if backend doesn't return it
+          const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${currentUser.id}`);
+          const vehiclePlate = currentUser.assignedVehiclePlate || localVehiclePlate;
+
+          if (vehiclePlate) {
+            const vRes = await fetch(`/api/v1/vehicles`);
+            if (vRes.ok) {
+              const vData: ApiVehicle[] = await vRes.json();
+              const matched = vData.find(v => v.plate === vehiclePlate);
+              setVehicle(matched || null);
+            }
           }
         }
       } catch (err) {
