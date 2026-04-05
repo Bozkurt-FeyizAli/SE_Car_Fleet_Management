@@ -7,7 +7,7 @@ namespace Backend.Models
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int ManagerId { get; set; }
+        public int Id { get; set; }
 
         [Required]
         public int UserId { get; set; }

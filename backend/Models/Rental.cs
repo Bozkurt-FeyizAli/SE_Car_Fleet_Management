@@ -14,7 +14,7 @@ namespace Backend.Models
         public string VehiclePlate { get; set; } = string.Empty;
 
         [Required]
-        public int RentingCompanyId { get; set; }
+        public int RenterCompanyId { get; set; }
 
         [Required]
         public DateTime StartDate { get; set; }
@@ -24,17 +24,17 @@ namespace Backend.Models
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
-        public decimal KmAtRental { get; set; }
+        public decimal RentStartKm { get; set; }
 
         public DateTime? ReturnDate { get; set; }
 
         [Column(TypeName = "decimal(12,2)")]
-        public decimal? TotalFee { get; set; }
+        public decimal? TotalPrice { get; set; }
 
         [ForeignKey("VehiclePlate")]
         public Vehicle Vehicle { get; set; } = null!;
 
-        [ForeignKey("RentingCompanyId")]
-        public Company RentingCompany { get; set; } = null!;
+        [ForeignKey("RenterCompanyId")]
+        public Company RenterCompany { get; set; } = null!;
     }
 }

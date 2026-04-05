@@ -19,7 +19,11 @@ namespace Backend.Models
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
-        public decimal BaseRentalPrice { get; set; }
+        public decimal BaseRentPrice { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "Müsait";
 
         [Required]
         public DateTime InsuranceEndDate { get; set; }
@@ -42,7 +46,7 @@ namespace Backend.Models
         public decimal DamageRecordAmount { get; set; }
 
         [ForeignKey("RegistrationNumber")]
-        public VehicleRegistration Registration { get; set; } = null!;
+        public VehicleRegistration VehicleRegistration { get; set; } = null!;
 
         [ForeignKey("CompanyId")]
         public Company Company { get; set; } = null!;
