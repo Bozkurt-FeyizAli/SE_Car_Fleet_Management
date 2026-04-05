@@ -18,15 +18,15 @@ export function RentalsTab() {
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<any | null>(null);
   const [returnItem, setReturnItem] = useState<any | null>(null);
-  const [form, setForm] = useState({ 
-    renterCompanyId: "", 
-    vehiclePlate: "", 
-    dynamicPrice: 0, 
-    startDate: "", 
-    endDate: "", 
-    returnKm: 0 
+  const [form, setForm] = useState({
+    renterCompanyId: "",
+    vehiclePlate: "",
+    dynamicPrice: 0,
+    startDate: "",
+    endDate: "",
+    returnKm: 0
   });
-  
+
   const [loading, setLoading] = useState(false);
 
   const fetchMyRentals = async () => {
@@ -65,7 +65,7 @@ export function RentalsTab() {
       if (result && result.price) {
         setForm(prev => ({ ...prev, dynamicPrice: result.price }));
       } else if (typeof result === "number") {
-         setForm(prev => ({ ...prev, dynamicPrice: result }));
+        setForm(prev => ({ ...prev, dynamicPrice: result }));
       }
     } catch (error) {
       console.error("Fiyat hesaplanamadi", error);
@@ -78,19 +78,19 @@ export function RentalsTab() {
     calculatePrice(plate, 1);
   };
 
-  const openAdd = () => { 
-    setForm({ renterCompanyId: "", vehiclePlate: "", dynamicPrice: 0, startDate: "", endDate: "", returnKm: 0 }); 
-    setEditItem(null); 
+  const openAdd = () => {
+    setForm({ renterCompanyId: "", vehiclePlate: "", dynamicPrice: 0, startDate: "", endDate: "", returnKm: 0 });
+    setEditItem(null);
     fetchAvailable();
-    setShowForm(true); 
+    setShowForm(true);
   };
 
   const handleSave = async () => {
-    if (!form.renterCompanyId || !form.vehiclePlate || !form.startDate || !form.endDate) { 
-      toast.error("Zorunlu alanlari doldurun"); 
-      return; 
+    if (!form.renterCompanyId || !form.vehiclePlate || !form.startDate || !form.endDate) {
+      toast.error("Zorunlu alanlari doldurun");
+      return;
     }
-    
+
     setLoading(true);
     try {
       await apiFetch("/v1/rentals/request", {
@@ -138,34 +138,34 @@ export function RentalsTab() {
     { key: "start", header: "Baslangic", render: (r) => new Date(r.startDate || r.start_date || new Date()).toLocaleDateString("tr-TR") },
     { key: "end", header: "Bitis", render: (r) => (r.endDate || r.end_date) ? new Date(r.endDate || r.end_date).toLocaleDateString("tr-TR") : "—" },
     { key: "status", header: "Durum", render: (r) => <StatusBadge label={getStatusLabel(r.status || "active")} variant={getStatusVariant(r.status || "active")} /> },
-    { 
-      key: "actions", 
-      header: "Islemler", 
+    {
+      key: "actions",
+      header: "Islemler",
       render: (r) => (
         (r.status === "active" || r.status === "1") ? (
-          <button 
-            onClick={() => { setForm(prev => ({ ...prev, returnKm: 0 })); setReturnItem(r); }} 
+          <button
+            onClick={() => { setForm(prev => ({ ...prev, returnKm: 0 })); setReturnItem(r); }}
             className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded"
           >
             Iade Et
           </button>
         ) : null
-      ) 
+      )
     }
   ];
 
   return (
     <div>
       <h2 className="mb-4">Kiralik Araclar</h2>
-      <DataTable 
-        data={data} 
-        columns={columns} 
-        searchPlaceholder="Kiralama ara..." 
-        searchKeys={["vehiclePlate"]} 
-        onAdd={openAdd} 
-        addLabel="Kiralama Talebi" 
+      <DataTable
+        data={data}
+        columns={columns}
+        searchPlaceholder="Kiralama ara..."
+        searchKeys={["vehiclePlate"]}
+        onAdd={openAdd}
+        addLabel="Kiralama Talebi"
       />
-      
+
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title="Yeni Kiralama Talebi" onSubmit={handleSave} wide>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kiralayan Sirket *">
@@ -187,17 +187,17 @@ export function RentalsTab() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog 
-        open={!!returnItem} 
-        onClose={() => setReturnItem(null)} 
-        onConfirm={handleReturnAction} 
-        title="Araci Iade Et" 
+      <ConfirmDialog
+        open={!!returnItem}
+        onClose={() => setReturnItem(null)}
+        onConfirm={handleReturnAction}
+        title="Araci Iade Et"
         message={
           <div className="space-y-4">
             <p>Bu araci iade etmek istediginize emin misiniz? Lutfen guncel kilometreyi girin.</p>
-            <Input 
-              type="number" 
-              placeholder="Donus KM" 
+            <Input
+              type="number"
+              placeholder="Donus KM"
               value={form.returnKm || ""}
               onChange={e => setForm({ ...form, returnKm: Number(e.target.value) })}
             />

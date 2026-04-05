@@ -33,7 +33,7 @@ const LoginPage: React.FC = () => {
       }
 
       const data = await response.json();
-      
+
       console.log("Login API Response Data:", data);
 
       // Token ve kullanıcı bilgilerini kaydet
@@ -43,10 +43,10 @@ const LoginPage: React.FC = () => {
       // Token'i decode edip rol bilgisini çekiyoruz (gerçek backend JWT 'role' claim'i kullanıyor)
       const base64Url = data.token.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
       }).join(''));
-      
+
       const decodedToken = JSON.parse(jsonPayload);
       const role = String(decodedToken.role);
 
@@ -61,11 +61,11 @@ const LoginPage: React.FC = () => {
         navigate('/driver');
       } else {
         // Fallback to Role IDs for newly created valid accounts
-        if (role === "0" || role === "1" || role === "SuperAdmin" || role === "Admin") { 
+        if (role === "0" || role === "1" || role === "SuperAdmin" || role === "Admin") {
           navigate('/admin');
-        } else if (role === "2" || role === "CompanyManager" || role === "Manager") { 
+        } else if (role === "2" || role === "CompanyManager" || role === "Manager") {
           navigate('/manager');
-        } else { 
+        } else {
           // Default to Driver for Basic users (role === "3")
           navigate('/driver');
         }

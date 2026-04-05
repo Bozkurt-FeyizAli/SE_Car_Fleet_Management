@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  LayoutDashboard, Users, Truck, Car, ArrowLeftRight, UserCog, Settings, ShoppingCart, CreditCard, FileText,
+  LayoutDashboard, Users, Truck, Car, ArrowLeftRight, UserCog, Settings, ShoppingCart, CreditCard, FileText, Map
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DashboardTab } from "./tabs/DashboardTab";
@@ -12,6 +12,7 @@ import { OrdersTab } from "./tabs/OrdersTab";
 import { PaymentsTab } from "./tabs/PaymentsTab";
 import { DocumentsTab } from "./tabs/DocumentsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { LocationsTab } from "./tabs/LocationsTab";
 import { companies, users } from "../../data/mockData";
 
 // Simulated logged-in company admin
@@ -21,6 +22,7 @@ export const currentCompany = companies.find(c => c.id === currentCompanyAdmin.c
 
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "locations", label: "Konumlar", icon: Map },
   { id: "users", label: "Yoneticiler", icon: UserCog },
   { id: "drivers", label: "Soforler", icon: Truck },
   { id: "vehicles", label: "Araclar", icon: Car },
@@ -104,6 +106,7 @@ export function ManagerPanel() {
       {/* Content */}
       <div className="p-3 sm:p-6 pb-20 sm:pb-6">
         {activeTab === "dashboard" && <DashboardTab />}
+        {activeTab === "locations" && <LocationsTab />}
         {activeTab === "users" && <UsersTab />}
         {activeTab === "drivers" && <DriversTab />}
         {activeTab === "vehicles" && <VehiclesTab />}

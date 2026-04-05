@@ -4,6 +4,7 @@ import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/Stat
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
+import { AlertTriangle } from "lucide-react";
 
 // Fetch'den dönecek olan Swagger yapısına uygun interface
 export interface ApiVehicleRegistration {
@@ -205,7 +206,16 @@ export function VehiclesTab() {
   };
 
   const columns: Column<ApiVehicle>[] = [
-    { key: "plate", header: "Plaka", render: (v) => <span className="text-foreground">{v.plate}</span> },
+    { key: "plate", header: "Plaka", render: (v) => (
+      <div className="flex items-center gap-2">
+        <span className="text-foreground">{v.plate}</span>
+        {v.nextMaintenanceKm && v.currentKm !== undefined && (v.nextMaintenanceKm - v.currentKm <= 500) && (
+          <div title={`Bakım yaklaştı! Kalan KM: ${Math.max(0, v.nextMaintenanceKm - v.currentKm)}`}>
+            <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+    ) },
     { key: "brandModel", header: "Marka / Model", render: (v) => v.brandModel || "—" },
     { key: "year", header: "Yıl", render: (v) => v.year || "—" },
     { key: "registration", header: "Ruhsat No", render: (v) => v.registrationNumber || "—" },
