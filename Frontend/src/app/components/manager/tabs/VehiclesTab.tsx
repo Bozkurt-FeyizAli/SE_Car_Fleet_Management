@@ -5,6 +5,8 @@ import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
+import { currentCompany } from "../ManagerPanel";
+import { apiFetch } from "../../../utils/api";
 
 // Fetch'den dönecek olan Swagger yapısına uygun interface
 export interface ApiVehicleRegistration {
@@ -33,6 +35,7 @@ export interface ApiVehicle {
   year?: number;
   vehicleType?: string | null;
   capacityKg?: number;
+  isRentedIntoCompany?: boolean;
 }
 
 export function VehiclesTab() {
@@ -57,7 +60,7 @@ export function VehiclesTab() {
     cascoEndDate: "",
     inspectionEndDate: "",
     nextMaintenanceKm: 0,
-    companyId: 1, 
+    companyId: currentCompany.id, 
     damageRecordAmount: 0,
   });
 
@@ -75,6 +78,15 @@ export function VehiclesTab() {
       
       const vehicles: ApiVehicle[] = await vRes.json();
       const regs: ApiVehicleRegistration[] = await rRes.json();
+
+      let rentals: any[] = [];
+      try {
+        const rentRes = await apiFetch("/v1/rentals/my-rentals");
+        rentals = Array.isArray(rentRes) ? rentRes : (rentRes?.data || []);
+      } catch (err) {}
+
+      const activeRentalsIn = rentals.filter(r => r.renterCompanyId === currentCompany.id && !r.returnDate);
+      const rentedInPlates = new Set(activeRentalsIn.map(r => r.vehiclePlate || r.vehicle_id));
       
       // Merge vehicle data with registration data
       const merged = vehicles.map(v => {
@@ -87,8 +99,14 @@ export function VehiclesTab() {
           capacityKg: r?.capacity
         };
       });
-      
-      setData(merged);
+      // Kendi sahip olduğumuz araçlar veya dışarıdan aktif olarak kiraladığımız araçlar
+      const companyVehicles = merged.filter(v => v.companyId === currentCompany.id || rentedInPlates.has(v.plate)).map(v => {
+        if (v.companyId !== currentCompany.id && rentedInPlates.has(v.plate)) {
+          return { ...v, isRentedIntoCompany: true };
+        }
+        return v;
+      });
+      setData(companyVehicles);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -115,6 +133,10 @@ export function VehiclesTab() {
   };
 
   const openEdit = (item: ApiVehicle) => {
+    if (item.isRentedIntoCompany) {
+      toast.info("Kiraladığınız dış araçların bilgilerini düzenleyemezsiniz.");
+      return;
+    }
     setForm({
       ...item,
       insuranceEndDate: item.insuranceEndDate ? item.insuranceEndDate.split('T')[0] : "",
@@ -140,13 +162,13 @@ export function VehiclesTab() {
     };
 
     const vehiclePayload = {
-      plate: form.plate,
-      registrationNumber: form.registrationNumber,
+      plate: editItem ? editItem.plate : form.plate,
+      registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm),
       baseRentPrice: Number(form.baseRentPrice),
       nextMaintenanceKm: Number(form.nextMaintenanceKm),
       damageRecordAmount: Number(form.damageRecordAmount),
-      companyId: 1,
+      companyId: currentCompany.id,
       isActive: form.isActive,
       insuranceEndDate: form.insuranceEndDate ? new Date(form.insuranceEndDate).toISOString() : null,
       cascoEndDate: form.cascoEndDate ? new Date(form.cascoEndDate).toISOString() : null,
@@ -190,7 +212,7 @@ export function VehiclesTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.plate) return;
     try {
-      const res = await fetch(`/api/v1/vehicles/${deleteItem.plate}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/vehicles/${encodeURIComponent(deleteItem.plate)}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
       toast.success("Araç silindi");
       setDeleteItem(null);
@@ -221,7 +243,11 @@ export function VehiclesTab() {
     { key: "registration", header: "Ruhsat No", render: (v) => v.registrationNumber || "—" },
     { key: "currentKm", header: "Anlık KM", render: (v) => v.currentKm ? `${v.currentKm} km` : "0" },
     { key: "baseRent", header: "Günlük Kira", render: (v) => v.baseRentPrice ? `₺${v.baseRentPrice}` : "0" },
-    { key: "status", header: "Durum", render: (v) => <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "neutral"} /> },
+    { key: "status", header: "Durum", render: (v) => 
+      v.isRentedIntoCompany 
+        ? <StatusBadge label="Aktif (Kiralık)" variant="info" />
+        : <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "neutral"} /> 
+    },
   ];
 
   const canAddVehicle = permissions.length === 0 || permissions.includes("arac:ekle");
@@ -239,13 +265,19 @@ export function VehiclesTab() {
         onAdd={canAddVehicle ? openAdd : undefined} 
         addLabel="Araç Ekle" 
         onEdit={canEditVehicle ? openEdit : undefined} 
-        onDelete={canDeleteVehicle ? (v) => setDeleteItem(v) : undefined} 
+        onDelete={canDeleteVehicle ? (v) => {
+          if (v.isRentedIntoCompany) {
+             toast.info("Kiralık araçları buradan silemezsiniz. Lütfen Kiralık sekmesinden İade işlemini kullanın.");
+             return;
+          }
+          setDeleteItem(v);
+        } : undefined} 
       />
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Araç Düzenle" : "Yeni Araç"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} /></Field>
+          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Marka / Model *"><Input value={form.brandModel || ""} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></Field>
-          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} /></Field>
+          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Yıl"><Input type="number" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></Field>
           
           <Field label="Tip">
