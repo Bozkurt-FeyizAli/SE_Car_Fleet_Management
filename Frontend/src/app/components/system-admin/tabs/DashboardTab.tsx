@@ -35,6 +35,7 @@ export function DashboardTab() {
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
   const [globalTrips, setGlobalTrips] = useState<any[]>([]);
   const [globalLocations, setGlobalLocations] = useState<any[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | "all">("all");
 
   useEffect(() => {
     // 1. Önce firmaları çekiyoruz
@@ -59,14 +60,14 @@ export function DashboardTab() {
           const allTrips: any[] = [];
           tripsResults.forEach((tArr, i) => {
             if (Array.isArray(tArr)) {
-              tArr.forEach(t => allTrips.push({ ...t, assignedCompanyName: comps[i].name }));
+              tArr.forEach(t => allTrips.push({ ...t, companyId: comps[i].id, assignedCompanyName: comps[i].companyName }));
             }
           });
 
           const allLocs: any[] = [];
-          locsResults.forEach(lArr => {
+          locsResults.forEach((lArr, i) => {
             if (Array.isArray(lArr)) {
-              allLocs.push(...lArr);
+              lArr.forEach(l => allLocs.push({ ...l, companyId: comps[i].id, companyName: comps[i].companyName }));
             }
           });
 
@@ -92,7 +93,7 @@ export function DashboardTab() {
       .catch(console.error);
   }, []);
 
-  const activeCompanies = companies.filter(c => c.status === "active").length;
+  const activeCompanies = companies.length;
   const drivers = users.filter(u => u.roleId === 3 && u.email !== "admin@fleet.com");
   const activeDrivers = drivers.filter(d => d.driverTripStatus !== "inactive").length;
   const activeVehicles = vehicles.filter(v => v.isActive).length;
@@ -123,8 +124,23 @@ export function DashboardTab() {
 
       {/* GLOBAL KÜRESEL HARİTA */}
       <div>
-        <h3 className="mb-3 flex items-center gap-2 text-indigo-500"><MapPin className="w-5 h-5"/> Küresel Canlı Harita (Tüm Şirketler)</h3>
-        <p className="text-sm text-muted-foreground mb-3">Sistemdeki tüm şirketlerin şu an taşıma onayı verdiği veya hareket halindeki araçların global dağılımı:</p>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-3 text-indigo-500 gap-4">
+          <h3 className="flex items-center gap-2">
+            <MapPin className="w-5 h-5"/> 
+            Küresel Canlı Harita {selectedCompanyId === "all" ? "(Tüm Şirketler)" : `(${companies.find(c => c.id === selectedCompanyId)?.companyName || ""})`}
+          </h3>
+          <select 
+            className="h-9 rounded-md border border-indigo-400 bg-card text-indigo-400 font-medium px-3 text-sm focus:outline-none"
+            value={selectedCompanyId}
+            onChange={(e) => setSelectedCompanyId(e.target.value === "all" ? "all" : Number(e.target.value))}
+          >
+            <option value="all">Tüm Şirketler</option>
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>{c.companyName}</option>
+            ))}
+          </select>
+        </div>
+        <p className="text-sm text-muted-foreground mb-3">Sistemdeki seçili şirketlerin operasyon konumları (Mavi pin) ve hareket halindeki araçları (Lacivert araç pini):</p>
         
         <div className="h-[450px] w-full rounded-xl border border-border shadow-md overflow-hidden relative z-0 bg-slate-900/50">
           <MapContainer center={[39.0, 35.0]} zoom={6} style={{ height: "100%", width: "100%", zIndex: 0 }}>
@@ -132,7 +148,22 @@ export function DashboardTab() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {globalTrips.map(trip => {
+            {globalLocations
+              .filter(l => selectedCompanyId === "all" || l.companyId === selectedCompanyId)
+              .map((loc: any) => (
+                <Marker key={`loc-${loc.id || loc.locationName}`} position={[loc.latitude, loc.longitude]}>
+                  <Popup>
+                    <div className="text-sm p-1">
+                      <span className="font-bold text-xs bg-slate-100 text-slate-800 p-1 border rounded block mb-1">🏢 {loc.companyName}</span>
+                      <strong>Konum:</strong> {loc.locationName}<br/>
+                      <strong>Adres:</strong> {loc.address?.fullAddress || loc.fullAddress || loc.address?.city}
+                    </div>
+                  </Popup>
+                </Marker>
+            ))}
+            {globalTrips
+              .filter(t => selectedCompanyId === "all" || t.companyId === selectedCompanyId)
+              .map(trip => {
               const startLoc = globalLocations.find(l => l.id === trip.startLocationId);
               if (!startLoc) return null;
               return { trip, startLoc };
@@ -194,8 +225,7 @@ export function DashboardTab() {
             {companies.map(c => (
               <div key={c.id} className="p-4 rounded-lg border border-border bg-card">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold truncate text-indigo-400">{c.name}</p>
-                  <StatusBadge label={getStatusLabel(c.status)} variant={getStatusVariant(c.status)} />
+                  <p className="text-sm font-semibold truncate text-indigo-400">{c.companyName}</p>
                 </div>
                 <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                   <div className="flex justify-between">
