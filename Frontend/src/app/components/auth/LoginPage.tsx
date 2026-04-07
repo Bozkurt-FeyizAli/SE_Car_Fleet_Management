@@ -33,7 +33,7 @@ const LoginPage: React.FC = () => {
       }
 
       const data = await response.json();
-      
+
       console.log("Login API Response Data:", data);
 
       // Token ve kullanıcı bilgilerini kaydet
@@ -43,10 +43,10 @@ const LoginPage: React.FC = () => {
       // Token'i decode edip rol bilgisini çekiyoruz (gerçek backend JWT 'role' claim'i kullanıyor)
       const base64Url = data.token.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
       }).join(''));
-      
+
       const decodedToken = JSON.parse(jsonPayload);
       const role = String(decodedToken.role);
 
@@ -60,14 +60,22 @@ const LoginPage: React.FC = () => {
       } else if (email === "sofor@fleet.com") {
         navigate('/driver');
       } else {
-        // Fallback to Role IDs for newly created valid accounts
-        if (role === "0" || role === "1" || role === "SuperAdmin" || role === "Admin") { 
+        // Backend her yeni kullanıcıya JWT içinde role="User" atıyor (ve roleId'yi token'da gizliyor)
+        // Bu yüzden kimlik avcısı (heuristics) mantığını burada da kullanmalıyız!
+        const emailLower = email.toLowerCase();
+        
+        let userId;
+        try {
+           userId = decodedToken.id || decodedToken.sub || decodedToken.nameid || decodedToken["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"];
+        } catch(e) {}
+
+        if (role === "0" || role === "1" || role === "SuperAdmin" || role === "Admin" || emailLower.includes("admin")) {
           navigate('/admin');
-        } else if (role === "2" || role === "CompanyManager" || role === "Manager") { 
-          navigate('/manager');
-        } else { 
-          // Default to Driver for Basic users (role === "3")
+        } else if (role === "3" || role === "Driver" || emailLower.includes("sofor") || emailLower.includes("şoför") || (userId && localStorage.getItem('is_driver_' + userId) === 'true')) {
           navigate('/driver');
+        } else {
+          // Geriye kalan herkesi Şirket Yöneticisi varsayarak manager paneline yönlendiriyoruz (Asım Kökçü gibi tasiyici@fleet.com vs)
+          navigate('/manager');
         }
       }
 

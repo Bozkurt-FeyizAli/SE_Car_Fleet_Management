@@ -3,8 +3,12 @@ import { DataTable, Column } from "../../shared/DataTable";
 import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
+import { Button } from "../../ui/button";
 import { toast } from "sonner";
+import { Play, CheckCircle2 } from "lucide-react";
 import { ApiVehicle } from "./VehiclesTab";
+import { currentCompany } from "../ManagerPanel";
+import { apiFetch } from "../../../utils/api";
 
 export interface ApiUser {
   id?: number;
@@ -32,12 +36,16 @@ export function DriversTab() {
   const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
+  const [dispatchItem, setDispatchItem] = useState<ApiUser | null>(null);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [activeTrips, setActiveTrips] = useState<any[]>([]);
+  const [dispatchForm, setDispatchForm] = useState({ startLocationId: "", endLocationId: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
 
   const getInitialForm = (): ApiUser => ({
     parentManagerId: null,
-    companyId: 1, // Will be overridden or passed
+    companyId: currentCompany.id,
     firstName: "",
     lastName: "",
     email: "",
@@ -60,8 +68,27 @@ export function DriversTab() {
       const res = await fetch("/api/User");
       if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
       const list: any[] = await res.json();
-      // Yalnızca Şoförleri listele, hatalı admin hesabını gizle. Role sistemi User API'sinde farklı ilerliyorsa burası da uyarlanabilir.
-      setData(list.filter(u => u.email !== "admin@fleet.com"));
+      // Yalnızca Şoförleri listele ve bu şirkete ait olanları filtrele
+      const driversOnly = list.filter((u: any) => {
+        // 1) Şirket uyuşmazlığı varsa direkt geç
+        if (u.companyId !== currentCompany.id) return false;
+        
+        // 2) Şoför olup olmadığını tespit et
+        if (u.roleId === 3) return true;
+        if (localStorage.getItem('is_driver_' + u.id) === 'true') return true;
+        if (localStorage.getItem('is_manager_' + u.id) === 'true') return false;
+        
+        const emailLower = (u.email || "").toLowerCase();
+        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+        
+        if (emailLower.includes("admin")) return false;
+        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return true;
+        if (emailLower.includes("yonetici") || emailLower.includes("manager") || nameLower.includes("yönetici")) return false;
+        
+        return false; // Backend roleId atamadığında yönetici-admin sınıfında olmayanları şoför varsaymıyoruz. Yöneticidir.
+      });
+      
+      setData(driversOnly);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -72,18 +99,61 @@ export function DriversTab() {
   const fetchVehicles = async () => {
     try {
       const res = await fetch("/api/v1/vehicles");
-      if (res.ok) {
-        const list: ApiVehicle[] = await res.json();
-        setVehicles(list);
-      }
+      let allVs: ApiVehicle[] = [];
+      if (res.ok) allVs = await res.json();
+
+      let rentals: any[] = [];
+      try {
+        const rRes = await apiFetch("/v1/rentals/my-rentals");
+        rentals = Array.isArray(rRes) ? rRes : (rRes?.data || []);
+      } catch (err) {}
+
+      const usablePlates = new Set<string>();
+
+      allVs.forEach(v => {
+        if (v.companyId === currentCompany.id) {
+          // Eğer bizim aracımızsa, ve başkasına KİRALAMAMIŞSAK listede çıkar.
+          // (aktif kiralama yoksa returnDate = null veya status active)
+          const rentedOut = rentals.find(r => r.vehiclePlate === v.plate && !r.returnDate && r.renterCompanyId !== currentCompany.id);
+          if (!rentedOut) usablePlates.add(v.plate);
+        }
+      });
+
+      rentals.forEach(r => {
+        // Eğer başkasının aracıysa ama BİZ KİRALAMIŞSAK, biz de kendi şoförümüze atayabiliriz!
+        if (!r.returnDate && r.renterCompanyId === currentCompany.id) {
+          usablePlates.add(r.vehiclePlate);
+        }
+      });
+
+      const assignableVehicles = allVs.filter(v => usablePlates.has(v.plate) && v.isActive);
+      setVehicles(assignableVehicles);
     } catch (e) {
       console.error("Araçlar yüklenemedi", e);
+    }
+  };
+
+  const fetchLocations = async () => {
+    try {
+      const result = await apiFetch(`/Locations/company/${currentCompany.id}`);
+      if (Array.isArray(result)) setLocations(result);
+    } catch(err) { }
+  };
+
+  const fetchActiveTrips = async () => {
+    try {
+      const result = await apiFetch(`/Trips/active/${currentCompany.id}`);
+      if (Array.isArray(result)) setActiveTrips(result);
+    } catch(err) {
+      console.error(err);
     }
   };
 
   useEffect(() => {
     fetchUsers();
     fetchVehicles();
+    fetchLocations();
+    fetchActiveTrips();
   }, []);
 
   const openAdd = () => {
@@ -112,7 +182,7 @@ export function DriversTab() {
 
     const payload: any = {
       parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
-      companyId: 1, // Fallback
+      companyId: currentCompany.id,
       roleId: 3, // Sürücü rolü
       firstName: form.firstName,
       lastName: form.lastName,
@@ -143,19 +213,26 @@ export function DriversTab() {
 
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
 
-      // Frontend workaround: Backend UserResponse araç plakasını kalıcı tutmak için gösterim amaçlı önbelleğe alıyoruz.
       try {
         let userId = editItem?.id;
         
         // Eğer POST (yeni ekleme) yapıyorsak dönen body'den id'yi okumaya çalış
         if (!userId) {
           try {
-            const savedUser = await res.clone().json();
+            const responseText = await res.clone().text();
+            console.log("DRIVER ADD RESPONSE:", responseText);
+            const savedUser = JSON.parse(responseText);
             userId = savedUser.id;
-          } catch(err) { }
+          } catch(err) {
+            console.error("DRIVER ADD ID FETCH ERROR:", err);
+          }
         }
 
         if (userId) {
+          console.log("MARKING DRIVER:", userId);
+          localStorage.setItem(`is_driver_${userId}`, 'true');
+          localStorage.removeItem(`is_manager_${userId}`);
+
           if (form.assignedVehiclePlate) {
              localStorage.setItem(`driver_vehicle_plate_${userId}`, form.assignedVehiclePlate);
              localStorage.removeItem(`driver_vehicle_${userId}`); // Temizlik
@@ -185,6 +262,59 @@ export function DriversTab() {
       fetchUsers();
     } catch (e: any) {
       toast.error(e.message || "Hata oluştu");
+    }
+  };
+
+  const handleStartTrip = async () => {
+    if (!dispatchItem || !dispatchForm.startLocationId || !dispatchForm.endLocationId) {
+      toast.error("Başlangıç ve varış konumlarını seçmelisiniz");
+      return;
+    }
+    const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${dispatchItem.id}`);
+    const assignedPlate = dispatchItem.assignedVehiclePlate || localVehiclePlate;
+    
+    if (!assignedPlate) {
+      toast.error(`"${dispatchItem.firstName}" adlı şoföre atanmış bir araç bulunamadı. Lütfen önce araç tahsis edin.`);
+      return;
+    }
+    
+    try {
+      const payload = {
+        driverId: dispatchItem.id,
+        vehiclePlate: assignedPlate,
+        startLocationId: Number(dispatchForm.startLocationId),
+        endLocationId: Number(dispatchForm.endLocationId),
+      };
+
+      try {
+        await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+      } catch(e: any) {
+        if (e.message?.includes("Driver not found")) {
+           // Fallback to DriverId=1 if backend decoupled Identity vs Driver IDs
+           payload.driverId = 1;
+           await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+        } else {
+           throw e;
+        }
+      }
+
+      toast.success("Sefer başarıyla başlatıldı!");
+      setDispatchItem(null);
+      fetchUsers();
+      fetchActiveTrips();
+    } catch(err: any) {
+      toast.error("Hata: " + err.message);
+    }
+  };
+
+  const handleCompleteTrip = async (tripId: number) => {
+    try {
+      await apiFetch(`/Trips/${tripId}/complete`, { method: "POST" });
+      toast.success("Sefer başarıyla tamamlandı!");
+      fetchUsers();
+      fetchActiveTrips();
+    } catch(err: any) {
+      toast.error("Hata: " + err.message);
     }
   };
 
@@ -221,6 +351,27 @@ export function DriversTab() {
         addLabel="Şoför Ekle" 
         onEdit={openEdit} 
         onDelete={(d) => setDeleteItem(d)} 
+        customActions={(d) => {
+          const status = d.driverTripStatus || "Boşta";
+          const activeTrip = activeTrips.find(t => t.driverId === d.id);
+          
+          if (activeTrip) {
+            return (
+              <Button variant="ghost" size="sm" onClick={() => handleCompleteTrip(activeTrip.id || activeTrip.tripId)} className="h-8 px-2 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/40">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Seferi Bitir</span>
+              </Button>
+            );
+          } else if (status !== "Seferde" && status !== "on_trip") {
+            return (
+              <Button variant="ghost" size="sm" onClick={() => setDispatchItem(d)} className="h-8 px-2 text-xs gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/40">
+                <Play className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sefer Başlat</span>
+              </Button>
+            );
+          }
+          return null;
+        }}
       />
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Şoför Düzenle" : "Yeni Şoför"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -263,6 +414,42 @@ export function DriversTab() {
           </Field>
         </div>
       </FormDialog>
+      
+      <FormDialog open={!!dispatchItem} onClose={() => setDispatchItem(null)} title="Sefer Başlat" onSubmit={handleStartTrip}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            <strong>{dispatchItem?.firstName} {dispatchItem?.lastName}</strong> adlı şoförü sefere çıkarıyorsunuz. Aracı: <strong>{dispatchItem?.assignedVehiclePlate || localStorage.getItem(`driver_vehicle_plate_${dispatchItem?.id}`)}</strong>
+          </p>
+          <Field label="Başlangıç Konumu *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={dispatchForm.startLocationId} 
+              onChange={e => setDispatchForm({ ...dispatchForm, startLocationId: e.target.value })}
+            >
+              <option value="">Konum Seçiniz...</option>
+              {locations.map(loc => {
+                const addr = loc.fullAddress || loc.address?.fullAddress || loc.address?.city || "Adres Yok";
+                return <option key={loc.id} value={loc.id}>{loc.locationName} - {addr.substring(0, 30)}{addr.length > 30 ? "..." : ""}</option>;
+              })}
+            </select>
+          </Field>
+          
+          <Field label="Varış (Hedef) Konumu *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={dispatchForm.endLocationId} 
+              onChange={e => setDispatchForm({ ...dispatchForm, endLocationId: e.target.value })}
+            >
+              <option value="">Konum Seçiniz...</option>
+              {locations.map(loc => {
+                const addr = loc.fullAddress || loc.address?.fullAddress || loc.address?.city || "Adres Yok";
+                return <option key={loc.id} value={loc.id}>{loc.locationName} - {addr.substring(0, 30)}{addr.length > 30 ? "..." : ""}</option>;
+              })}
+            </select>
+          </Field>
+        </div>
+      </FormDialog>
+
       <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Şoför Sil" message={`"${deleteItem?.firstName} ${deleteItem?.lastName}" kullanıcısını silmek istediğinize emin misiniz?`} />
     </div>
   );

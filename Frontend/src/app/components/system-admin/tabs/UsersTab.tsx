@@ -78,6 +78,12 @@ export function UsersTab() {
       criminalRecord: form.criminalRecord,
       companyId: form.companyId ? Number(form.companyId) : 1,
       parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
+      roleId: form.roleId !== undefined && form.roleId !== null ? Number(form.roleId) : 3,
+      driverLicenseId: form.driverLicenseId,
+      driverLicenseType: form.driverLicenseType,
+      driverScore: form.driverScore,
+      driverTripStatus: form.driverTripStatus,
+      assignedVehiclePlate: form.assignedVehiclePlate,
     };
 
     if (form.passwordHash && form.passwordHash.trim() !== "") {
@@ -95,6 +101,25 @@ export function UsersTab() {
       });
 
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
+
+      try {
+        let userId = editItem?.id;
+        if (!userId) {
+          try {
+            const savedUser = await res.clone().json();
+            userId = savedUser.id;
+          } catch(err) { }
+        }
+        if (userId) {
+           if (form.roleId === 3) {
+              localStorage.setItem(`is_driver_${userId}`, 'true');
+              localStorage.removeItem(`is_manager_${userId}`);
+           } else {
+              localStorage.setItem(`is_manager_${userId}`, 'true');
+              localStorage.removeItem(`is_driver_${userId}`);
+           }
+        }
+      } catch(e) {}
 
       toast.success(editItem ? "Kullanıcı güncellendi" : "Kullanıcı eklendi");
       setShowForm(false);
@@ -122,9 +147,24 @@ export function UsersTab() {
     { key: "email", header: "E-posta", render: (u) => <span className="text-blue-600">{u.email}</span> },
     { key: "role", header: "Rol", render: (u) => {
         let label = "Bilinmeyen";
-        if (u.roleId === 0 || u.roleId === 1) label = "Süper Admin";
-        if (u.roleId === 2) label = "Şirket Yöneticisi";
-        if (u.roleId === 3) label = "Şoför";
+        
+        // Eğer backend roleId gönderiyorsa
+        if (u.roleId === 1) label = "Süper Admin";
+        else if (u.roleId === 2) label = "Şirket Yöneticisi";
+        else if (u.roleId === 3) label = "Sürücü";
+        // Backend roleId GÖNDERMİYORSA (Geçici Görsel Çözüm)
+        else {
+          const emailLower = (u.email || "").toLowerCase();
+          const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+        
+          if (localStorage.getItem('is_manager_' + u.id) === 'true') label = "Şirket Yöneticisi";
+          else if (localStorage.getItem('is_driver_' + u.id) === 'true') label = "Sürücü";
+          else if (emailLower.includes("admin")) label = "Süper Admin";
+          else if (u.driverLicenseId || u.assignedVehiclePlate || u.driverTripStatus) label = "Sürücü";
+          else if (emailLower.includes("sofor") || nameLower.includes("şoför")) label = "Sürücü";
+          else label = "Şirket Yöneticisi";
+        }
+        
         return <StatusBadge label={label} variant="info" />;
       } 
     },
@@ -157,28 +197,36 @@ export function UsersTab() {
           <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
           <Field label="Telefon"><Input value={form.phoneNumber || ""} onChange={e => setForm({ ...form, phoneNumber: e.target.value })} /></Field>
           <Field label="Tc (TC Kimlik No)"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
-          <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
-          <Field label="Ehliyet No"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
-          <Field label="Ehliyet Tipi"><Input value={form.driverLicenseType || ""} placeholder="B, D1 vb." onChange={e => setForm({ ...form, driverLicenseType: e.target.value })} /></Field>
+          {form.roleId === 3 && (
+            <>
+              <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
+              <Field label="Ehliyet No"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
+              <Field label="Ehliyet Tipi"><Input value={form.driverLicenseType || ""} placeholder="B, D1 vb." onChange={e => setForm({ ...form, driverLicenseType: e.target.value })} /></Field>
+            </>
+          )}
           <Field label="Rol">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.roleId ?? ""} onChange={e => setForm({ ...form, roleId: Number(e.target.value) })}>
-              <option value="0">Süper Admin</option>
-              <option value="1">Süper Admin (Sistem)</option>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.roleId ?? 2} onChange={e => setForm({ ...form, roleId: Number(e.target.value) })}>
+              <option value="1">Süper Admin</option>
               <option value="2">Şirket Yöneticisi</option>
               <option value="3">Sürücü</option>
             </select>
           </Field>
           <Field label="Şirket ID"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
-          <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentManagerId || ""} onChange={e => setForm({ ...form, parentManagerId: Number(e.target.value) })} /></Field>
-          <Field label="Puan"><Input type="number" value={form.driverScore ?? 100} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
-          <Field label="Atanan Araç Plakası"><Input value={form.assignedVehiclePlate || ""} onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })} /></Field>
-          <Field label="Durum">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "Boşta"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
-              <option value="Boşta">Boşta</option>
-              <option value="Seferde">Seferde</option>
-              <option value="Pasif">Pasif</option>
-            </select>
-          </Field>
+          
+          {form.roleId === 3 && (
+            <>
+              <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentManagerId || ""} onChange={e => setForm({ ...form, parentManagerId: Number(e.target.value) })} /></Field>
+              <Field label="Puan"><Input type="number" value={form.driverScore ?? 100} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
+              <Field label="Atanan Araç Plakası"><Input value={form.assignedVehiclePlate || ""} onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })} /></Field>
+              <Field label="Durum">
+                <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "Boşta"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
+                  <option value="Boşta">Boşta</option>
+                  <option value="Seferde">Seferde</option>
+                  <option value="Pasif">Pasif</option>
+                </select>
+              </Field>
+            </>
+          )}
         </div>
       </FormDialog>
       <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Kullanıcı Sil" message={`"${deleteItem?.firstName}" kullanıcısını silmek istediğinize emin misiniz?`} />
