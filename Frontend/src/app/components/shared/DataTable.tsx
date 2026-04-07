@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
   onView?: (item: T) => void;
+  customActions?: (item: T) => React.ReactNode;
   addLabel?: string;
 }
 
@@ -29,6 +30,7 @@ export function DataTable<T extends Record<string, any>>({
   onEdit,
   onDelete,
   onView,
+  customActions,
   addLabel = "Yeni Ekle",
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
@@ -44,7 +46,7 @@ export function DataTable<T extends Record<string, any>>({
     );
   }, [data, search, searchKeys]);
 
-  const hasActions = onEdit || onDelete || onView;
+  const hasActions = onEdit || onDelete || onView || customActions;
 
   return (
     <div className="space-y-4">
@@ -90,6 +92,7 @@ export function DataTable<T extends Record<string, any>>({
               ))}
               {hasActions && (
                 <div className="flex items-center justify-end gap-1 pt-2 border-t border-border">
+                  {customActions && customActions(item)}
                   {onView && (
                     <Button
                       variant="ghost"
@@ -163,6 +166,7 @@ export function DataTable<T extends Record<string, any>>({
                   {hasActions && (
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {customActions && customActions(item)}
                         {onView && (
                           <Button variant="ghost" size="icon" onClick={() => onView(item)} className="h-7 w-7">
                             <Eye className="w-3.5 h-3.5" />

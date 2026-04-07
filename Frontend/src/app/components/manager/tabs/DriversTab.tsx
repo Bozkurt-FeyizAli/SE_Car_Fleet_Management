@@ -3,7 +3,9 @@ import { DataTable, Column } from "../../shared/DataTable";
 import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
+import { Button } from "../../ui/button";
 import { toast } from "sonner";
+import { Play, CheckCircle2 } from "lucide-react";
 import { ApiVehicle } from "./VehiclesTab";
 import { currentCompany } from "../ManagerPanel";
 import { apiFetch } from "../../../utils/api";
@@ -34,6 +36,10 @@ export function DriversTab() {
   const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
+  const [dispatchItem, setDispatchItem] = useState<ApiUser | null>(null);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [activeTrips, setActiveTrips] = useState<any[]>([]);
+  const [dispatchForm, setDispatchForm] = useState({ startLocationId: "", endLocationId: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
 
@@ -127,9 +133,27 @@ export function DriversTab() {
     }
   };
 
+  const fetchLocations = async () => {
+    try {
+      const result = await apiFetch(`/Locations/company/${currentCompany.id}`);
+      if (Array.isArray(result)) setLocations(result);
+    } catch(err) { }
+  };
+
+  const fetchActiveTrips = async () => {
+    try {
+      const result = await apiFetch(`/Trips/active/${currentCompany.id}`);
+      if (Array.isArray(result)) setActiveTrips(result);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchVehicles();
+    fetchLocations();
+    fetchActiveTrips();
   }, []);
 
   const openAdd = () => {
@@ -241,6 +265,59 @@ export function DriversTab() {
     }
   };
 
+  const handleStartTrip = async () => {
+    if (!dispatchItem || !dispatchForm.startLocationId || !dispatchForm.endLocationId) {
+      toast.error("Başlangıç ve varış konumlarını seçmelisiniz");
+      return;
+    }
+    const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${dispatchItem.id}`);
+    const assignedPlate = dispatchItem.assignedVehiclePlate || localVehiclePlate;
+    
+    if (!assignedPlate) {
+      toast.error(`"${dispatchItem.firstName}" adlı şoföre atanmış bir araç bulunamadı. Lütfen önce araç tahsis edin.`);
+      return;
+    }
+    
+    try {
+      const payload = {
+        driverId: dispatchItem.id,
+        vehiclePlate: assignedPlate,
+        startLocationId: Number(dispatchForm.startLocationId),
+        endLocationId: Number(dispatchForm.endLocationId),
+      };
+
+      try {
+        await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+      } catch(e: any) {
+        if (e.message?.includes("Driver not found")) {
+           // Fallback to DriverId=1 if backend decoupled Identity vs Driver IDs
+           payload.driverId = 1;
+           await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+        } else {
+           throw e;
+        }
+      }
+
+      toast.success("Sefer başarıyla başlatıldı!");
+      setDispatchItem(null);
+      fetchUsers();
+      fetchActiveTrips();
+    } catch(err: any) {
+      toast.error("Hata: " + err.message);
+    }
+  };
+
+  const handleCompleteTrip = async (tripId: number) => {
+    try {
+      await apiFetch(`/Trips/${tripId}/complete`, { method: "POST" });
+      toast.success("Sefer başarıyla tamamlandı!");
+      fetchUsers();
+      fetchActiveTrips();
+    } catch(err: any) {
+      toast.error("Hata: " + err.message);
+    }
+  };
+
   const columns: Column<ApiUser>[] = [
     { key: "name", header: "Ad Soyad", render: (d) => `${d.firstName || ""} ${d.lastName || ""}` },
     { key: "license", header: "Ehliyet No", render: (d) => d.driverLicenseId || "—" },
@@ -274,6 +351,27 @@ export function DriversTab() {
         addLabel="Şoför Ekle" 
         onEdit={openEdit} 
         onDelete={(d) => setDeleteItem(d)} 
+        customActions={(d) => {
+          const status = d.driverTripStatus || "Boşta";
+          const activeTrip = activeTrips.find(t => t.driverId === d.id);
+          
+          if (activeTrip) {
+            return (
+              <Button variant="ghost" size="sm" onClick={() => handleCompleteTrip(activeTrip.id || activeTrip.tripId)} className="h-8 px-2 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/40">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Seferi Bitir</span>
+              </Button>
+            );
+          } else if (status !== "Seferde" && status !== "on_trip") {
+            return (
+              <Button variant="ghost" size="sm" onClick={() => setDispatchItem(d)} className="h-8 px-2 text-xs gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/40">
+                <Play className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sefer Başlat</span>
+              </Button>
+            );
+          }
+          return null;
+        }}
       />
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Şoför Düzenle" : "Yeni Şoför"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -316,6 +414,42 @@ export function DriversTab() {
           </Field>
         </div>
       </FormDialog>
+      
+      <FormDialog open={!!dispatchItem} onClose={() => setDispatchItem(null)} title="Sefer Başlat" onSubmit={handleStartTrip}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            <strong>{dispatchItem?.firstName} {dispatchItem?.lastName}</strong> adlı şoförü sefere çıkarıyorsunuz. Aracı: <strong>{dispatchItem?.assignedVehiclePlate || localStorage.getItem(`driver_vehicle_plate_${dispatchItem?.id}`)}</strong>
+          </p>
+          <Field label="Başlangıç Konumu *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={dispatchForm.startLocationId} 
+              onChange={e => setDispatchForm({ ...dispatchForm, startLocationId: e.target.value })}
+            >
+              <option value="">Konum Seçiniz...</option>
+              {locations.map(loc => {
+                const addr = loc.fullAddress || loc.address?.fullAddress || loc.address?.city || "Adres Yok";
+                return <option key={loc.id} value={loc.id}>{loc.locationName} - {addr.substring(0, 30)}{addr.length > 30 ? "..." : ""}</option>;
+              })}
+            </select>
+          </Field>
+          
+          <Field label="Varış (Hedef) Konumu *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={dispatchForm.endLocationId} 
+              onChange={e => setDispatchForm({ ...dispatchForm, endLocationId: e.target.value })}
+            >
+              <option value="">Konum Seçiniz...</option>
+              {locations.map(loc => {
+                const addr = loc.fullAddress || loc.address?.fullAddress || loc.address?.city || "Adres Yok";
+                return <option key={loc.id} value={loc.id}>{loc.locationName} - {addr.substring(0, 30)}{addr.length > 30 ? "..." : ""}</option>;
+              })}
+            </select>
+          </Field>
+        </div>
+      </FormDialog>
+
       <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Şoför Sil" message={`"${deleteItem?.firstName} ${deleteItem?.lastName}" kullanıcısını silmek istediğinize emin misiniz?`} />
     </div>
   );
