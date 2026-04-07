@@ -56,7 +56,23 @@ export function DriversTab() {
       const res = await fetch("/api/User");
       if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
       const list = await res.json();
-      setData(list);
+      
+      // Heuristik olarak Driver tespit et ve listele
+      const driversOnly = list.filter((u: any) => {
+        if (u.roleId === 3) return true;
+        if (localStorage.getItem('is_driver_' + u.id) === 'true') return true;
+        if (localStorage.getItem('is_manager_' + u.id) === 'true') return false;
+
+        const emailLower = (u.email || "").toLowerCase();
+        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+        
+        if (emailLower.includes("admin")) return false;
+        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return true;
+        if (emailLower.includes("yonetici") || emailLower.includes("manager") || nameLower.includes("yönetici")) return false;
+        return false;
+      });
+      
+      setData(driversOnly);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -120,18 +136,26 @@ export function DriversTab() {
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
 
       try {
-        const savedUser = await res.clone().json();
-        const userId = savedUser.id || editItem?.id;
+        let userId = editItem?.id;
+        if (!userId) {
+          try {
+            const savedUser = await res.clone().json();
+            userId = savedUser.id;
+          } catch(err) { }
+        }
         if (userId) {
-          if (payload.assignedVehicleId) {
-             localStorage.setItem(`driver_vehicle_${userId}`, String(payload.assignedVehicleId));
-          } else {
+          localStorage.setItem(`is_driver_${userId}`, 'true');
+          localStorage.removeItem(`is_manager_${userId}`);
+          if (form.assignedVehiclePlate) {
+             localStorage.setItem(`driver_vehicle_plate_${userId}`, form.assignedVehiclePlate);
              localStorage.removeItem(`driver_vehicle_${userId}`);
+          } else {
+             localStorage.removeItem(`driver_vehicle_plate_${userId}`);
           }
         }
-      } catch(e) { }
+      } catch(e) {}
 
-      toast.success(editItem ? "Şoför/Kullanıcı güncellendi" : "Şoför/Kullanıcı eklendi");
+      toast.success(editItem ? "Şoför ve Araç Ataması güncellendi" : "Şoför eklendi ve Araç atandı");
       setShowForm(false);
       fetchUsers();
     } catch (e: any) {

@@ -1,75 +1,208 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DataTable, Column } from "../../shared/DataTable";
-import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
+import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
-import { users, User, nextId, getDepartmentName } from "../../../data/mockData";
 import { currentCompany } from "../ManagerPanel";
 import { toast } from "sonner";
 
+export interface ApiUser {
+  id?: number;
+  roleId?: number | null;
+  parentManagerId: number | null;
+  companyId: number | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  passwordHash: string | null;
+  phoneNumber: string | null;
+  tcIdentityNumber: string | null;
+  criminalRecord: string | null;
+  driverLicenseId?: string | null;
+}
+
 export function UsersTab() {
-  const companyUsers = () => users.filter(u => u.company_id === currentCompany.id && u.role !== "driver");
-  const [data, setData] = useState(companyUsers());
-  const [editItem, setEditItem] = useState<User | null>(null);
+  const [data, setData] = useState<ApiUser[]>([]);
+  const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteItem, setDeleteItem] = useState<User | null>(null);
-  const [form, setForm] = useState({ full_name: "", email: "", role: "department_admin" as User["role"], status: "active" as User["status"], phone: "" });
+  const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const openAdd = () => { setForm({ full_name: "", email: "", role: "department_admin", status: "active", phone: "" }); setEditItem(null); setShowForm(true); };
-  const openEdit = (item: User) => { setForm({ full_name: item.full_name, email: item.email, role: item.role, status: item.status, phone: item.phone ?? "" }); setEditItem(item); setShowForm(true); };
+  const getInitialForm = (): ApiUser => ({
+    parentManagerId: null,
+    companyId: currentCompany.id,
+    firstName: "",
+    lastName: "",
+    email: "",
+    passwordHash: "",
+    phoneNumber: "",
+    tcIdentityNumber: "",
+    criminalRecord: "",
+  });
 
-  const handleSave = () => {
-    if (!form.full_name || !form.email) { toast.error("Zorunlu alanlari doldurun"); return; }
-    if (editItem) {
-      const idx = users.findIndex(u => u.id === editItem.id);
-      if (idx >= 0) users[idx] = { ...users[idx], ...form };
-    } else {
-      users.push({ id: nextId(), full_name: form.full_name, email: form.email, password_hash: "xxx", role: form.role, company_id: currentCompany.id, department_id: null, status: form.status, phone: form.phone, created_at: new Date().toISOString() });
+  const [form, setForm] = useState<ApiUser>(getInitialForm());
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/User");
+      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
+      const list = await res.json();
+      
+      const managersOnly = list.filter((u: any) => {
+        // Şirket uyuşmazlığı varsa geç
+        if (u.companyId !== currentCompany.id) return false;
+        
+        // Şoförleri hariç tutmak için Heuristics
+        if (u.roleId === 3) return false;
+        if (u.roleId === 2) return true;
+        if (localStorage.getItem('is_driver_' + u.id) === 'true') return false;
+        if (localStorage.getItem('is_manager_' + u.id) === 'true') return true;
+        
+        const emailLower = (u.email || "").toLowerCase();
+        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+        
+        // Super admin filter
+        if (emailLower.includes("admin")) return false; 
+        
+        // Şoför kelimesi geçiyorsa kesinlikle yöneticiler tablosunda durmasın
+        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return false;
+        
+        // Eğer ehliyet numarası tanımlanmışsa veya plaka tanımlanmışsa bu SÜRÜCÜDÜR.
+        if (u.driverLicenseId || u.assignedVehiclePlate || u.driverTripStatus) return false; 
+        
+        // Geri kalanları (kendisi ve diğer departman yöneticileri vs.) ekranda göster
+        return true; 
+      });
+      
+      setData(managersOnly);
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    } finally {
+      setIsLoading(false);
     }
-    setData(companyUsers());
-    setShowForm(false);
-    toast.success(editItem ? "Yonetici guncellendi" : "Yonetici eklendi");
   };
 
-  const handleDelete = () => {
-    if (!deleteItem) return;
-    const idx = users.findIndex(u => u.id === deleteItem.id);
-    if (idx >= 0) users.splice(idx, 1);
-    setData(companyUsers());
-    setDeleteItem(null);
-    toast.success("Yonetici silindi");
+  useEffect(() => {
+    fetchUsers();
+  }, [currentCompany.id]);
+
+  const openAdd = () => {
+    setForm(getInitialForm());
+    setEditItem(null);
+    setShowForm(true);
   };
 
-  const columns: Column<User>[] = [
-    { key: "name", header: "Ad Soyad", render: (u) => u.full_name },
+  const openEdit = (item: ApiUser) => {
+    setForm({ ...item, passwordHash: "" }); 
+    setEditItem(item);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.firstName || !form.lastName || !form.email) {
+      toast.error("Ad, Soyad ve Email zorunludur");
+      return;
+    }
+
+    const payload: any = {
+      ...form,
+      companyId: currentCompany.id,
+      roleId: 2, // Şirket Yöneticisi varsayılan rol
+      parentManagerId: null // Yöneticilerin üst yöneticisi olmaz
+    };
+
+    if (form.passwordHash && form.passwordHash.trim() !== "") {
+      payload.passwordHash = form.passwordHash;
+    }
+
+    try {
+      const method = editItem && editItem.id ? "PUT" : "POST";
+      const endpoint = editItem && editItem.id ? `/api/User/${editItem.id}` : `/api/User`;
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
+
+      // Set explicit frontend flag to prevent leaking into DriversTab due to missing roleId from backend
+      try {
+        let userId = editItem?.id;
+        if (!userId) {
+          try {
+            const savedUser = await res.clone().json();
+            userId = savedUser.id;
+          } catch(err) { }
+        }
+        if (userId) {
+           localStorage.setItem(`is_manager_${userId}`, 'true');
+           localStorage.removeItem(`is_driver_${userId}`);
+        }
+      } catch(e) {}
+
+      toast.success(editItem ? "Yönetici güncellendi" : "Yönetici eklendi");
+      setShowForm(false);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteItem || !deleteItem.id) return;
+    try {
+      const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error("Silme işlemi başarısız");
+      toast.success("Yönetici silindi");
+      setDeleteItem(null);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || "Hata oluştu");
+    }
+  };
+
+  const columns: Column<ApiUser>[] = [
+    { key: "name", header: "Ad Soyad", render: (u) => `${u.firstName || ""} ${u.lastName || ""}` },
     { key: "email", header: "E-posta", render: (u) => <span className="text-blue-600">{u.email}</span> },
-    { key: "role", header: "Rol", render: (u) => <StatusBadge label={getStatusLabel(u.role)} variant="info" /> },
-    { key: "dept", header: "Departman", render: (u) => getDepartmentName(u.department_id) },
-    { key: "status", header: "Durum", render: (u) => <StatusBadge label={getStatusLabel(u.status)} variant={getStatusVariant(u.status)} /> },
+    { key: "role", header: "Rol", render: () => <StatusBadge label="Şirket Yöneticisi" variant="info" /> },
+    { key: "phone", header: "Telefon", render: (u) => u.phoneNumber || "—" },
+    { key: "status", header: "Durum", render: () => <StatusBadge label="Aktif" variant="success" /> },
   ];
 
   return (
     <div>
-      <h2 className="mb-1">Yoneticiler</h2>
-      <p className="text-sm text-muted-foreground mb-4">Sirketinizdeki yoneticiler</p>
-      <DataTable data={data} columns={columns} searchPlaceholder="Yonetici ara..." searchKeys={["full_name", "email"]} onAdd={openAdd} addLabel="Yonetici Ekle" onEdit={openEdit} onDelete={(u) => setDeleteItem(u)} />
-      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Yonetici Duzenle" : "Yeni Yonetici"} onSubmit={handleSave}>
-        <Field label="Ad Soyad *"><Input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} /></Field>
-        <Field label="E-posta *"><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-        <Field label="Telefon"><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
-        <Field label="Rol">
-          <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as User["role"] })}>
-            <option value="company_admin">Sirket Yoneticisi</option>
-            <option value="department_admin">Departman Yoneticisi</option>
-          </select>
-        </Field>
-        <Field label="Durum">
-          <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as User["status"] })}>
-            <option value="active">Aktif</option><option value="inactive">Pasif</option>
-          </select>
-        </Field>
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Yöneticiler / İdari Personel</h2>
+      <DataTable 
+        data={data} 
+        columns={columns} 
+        searchPlaceholder="Yönetici ara..." 
+        searchKeys={["firstName", "lastName", "email"]} 
+        onAdd={openAdd} 
+        addLabel="Yönetici Ekle" 
+        onEdit={openEdit} 
+        onDelete={(u) => setDeleteItem(u)} 
+      />
+      
+      <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Yönetici Düzenle" : "Yeni Yönetici"} onSubmit={handleSave} wide>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="İsim *"><Input value={form.firstName || ""} onChange={e => setForm({ ...form, firstName: e.target.value })} /></Field>
+          <Field label="Soyisim *"><Input value={form.lastName || ""} onChange={e => setForm({ ...form, lastName: e.target.value })} /></Field>
+          <Field label="E-posta *"><Input type="email" value={form.email || ""} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
+          <Field label="Telefon"><Input value={form.phoneNumber || ""} onChange={e => setForm({ ...form, phoneNumber: e.target.value })} /></Field>
+          <Field label="TC Kimlik No"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
+          <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
+          <Field label="Rol">
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" disabled value="2">
+              <option value="2">Şirket Yöneticisi</option>
+            </select>
+          </Field>
+        </div>
       </FormDialog>
-      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Yonetici Sil" message={`"${deleteItem?.full_name}" yoneticisini silmek istediginize emin misiniz?`} />
+      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDelete} title="Yönetici Sil" message={`"${deleteItem?.firstName} ${deleteItem?.lastName}" adlı yöneticiyi silmek istediğinize emin misiniz?`} />
     </div>
   );
 }

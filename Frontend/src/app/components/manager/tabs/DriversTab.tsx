@@ -5,6 +5,8 @@ import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
 import { ApiVehicle } from "./VehiclesTab";
+import { currentCompany } from "../ManagerPanel";
+import { apiFetch } from "../../../utils/api";
 
 export interface ApiUser {
   id?: number;
@@ -37,7 +39,7 @@ export function DriversTab() {
 
   const getInitialForm = (): ApiUser => ({
     parentManagerId: null,
-    companyId: 1, // Will be overridden or passed
+    companyId: currentCompany.id,
     firstName: "",
     lastName: "",
     email: "",
@@ -60,8 +62,27 @@ export function DriversTab() {
       const res = await fetch("/api/User");
       if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
       const list: any[] = await res.json();
-      // Yalnızca Şoförleri listele, hatalı admin hesabını gizle. Role sistemi User API'sinde farklı ilerliyorsa burası da uyarlanabilir.
-      setData(list.filter(u => u.email !== "admin@fleet.com"));
+      // Yalnızca Şoförleri listele ve bu şirkete ait olanları filtrele
+      const driversOnly = list.filter((u: any) => {
+        // 1) Şirket uyuşmazlığı varsa direkt geç
+        if (u.companyId !== currentCompany.id) return false;
+        
+        // 2) Şoför olup olmadığını tespit et
+        if (u.roleId === 3) return true;
+        if (localStorage.getItem('is_driver_' + u.id) === 'true') return true;
+        if (localStorage.getItem('is_manager_' + u.id) === 'true') return false;
+        
+        const emailLower = (u.email || "").toLowerCase();
+        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+        
+        if (emailLower.includes("admin")) return false;
+        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return true;
+        if (emailLower.includes("yonetici") || emailLower.includes("manager") || nameLower.includes("yönetici")) return false;
+        
+        return false; // Backend roleId atamadığında yönetici-admin sınıfında olmayanları şoför varsaymıyoruz. Yöneticidir.
+      });
+      
+      setData(driversOnly);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -72,10 +93,35 @@ export function DriversTab() {
   const fetchVehicles = async () => {
     try {
       const res = await fetch("/api/v1/vehicles");
-      if (res.ok) {
-        const list: ApiVehicle[] = await res.json();
-        setVehicles(list);
-      }
+      let allVs: ApiVehicle[] = [];
+      if (res.ok) allVs = await res.json();
+
+      let rentals: any[] = [];
+      try {
+        const rRes = await apiFetch("/v1/rentals/my-rentals");
+        rentals = Array.isArray(rRes) ? rRes : (rRes?.data || []);
+      } catch (err) {}
+
+      const usablePlates = new Set<string>();
+
+      allVs.forEach(v => {
+        if (v.companyId === currentCompany.id) {
+          // Eğer bizim aracımızsa, ve başkasına KİRALAMAMIŞSAK listede çıkar.
+          // (aktif kiralama yoksa returnDate = null veya status active)
+          const rentedOut = rentals.find(r => r.vehiclePlate === v.plate && !r.returnDate && r.renterCompanyId !== currentCompany.id);
+          if (!rentedOut) usablePlates.add(v.plate);
+        }
+      });
+
+      rentals.forEach(r => {
+        // Eğer başkasının aracıysa ama BİZ KİRALAMIŞSAK, biz de kendi şoförümüze atayabiliriz!
+        if (!r.returnDate && r.renterCompanyId === currentCompany.id) {
+          usablePlates.add(r.vehiclePlate);
+        }
+      });
+
+      const assignableVehicles = allVs.filter(v => usablePlates.has(v.plate) && v.isActive);
+      setVehicles(assignableVehicles);
     } catch (e) {
       console.error("Araçlar yüklenemedi", e);
     }
@@ -112,7 +158,7 @@ export function DriversTab() {
 
     const payload: any = {
       parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
-      companyId: 1, // Fallback
+      companyId: currentCompany.id,
       roleId: 3, // Sürücü rolü
       firstName: form.firstName,
       lastName: form.lastName,
@@ -143,19 +189,26 @@ export function DriversTab() {
 
       if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
 
-      // Frontend workaround: Backend UserResponse araç plakasını kalıcı tutmak için gösterim amaçlı önbelleğe alıyoruz.
       try {
         let userId = editItem?.id;
         
         // Eğer POST (yeni ekleme) yapıyorsak dönen body'den id'yi okumaya çalış
         if (!userId) {
           try {
-            const savedUser = await res.clone().json();
+            const responseText = await res.clone().text();
+            console.log("DRIVER ADD RESPONSE:", responseText);
+            const savedUser = JSON.parse(responseText);
             userId = savedUser.id;
-          } catch(err) { }
+          } catch(err) {
+            console.error("DRIVER ADD ID FETCH ERROR:", err);
+          }
         }
 
         if (userId) {
+          console.log("MARKING DRIVER:", userId);
+          localStorage.setItem(`is_driver_${userId}`, 'true');
+          localStorage.removeItem(`is_manager_${userId}`);
+
           if (form.assignedVehiclePlate) {
              localStorage.setItem(`driver_vehicle_plate_${userId}`, form.assignedVehiclePlate);
              localStorage.removeItem(`driver_vehicle_${userId}`); // Temizlik

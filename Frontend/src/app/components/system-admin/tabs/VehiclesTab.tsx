@@ -132,8 +132,8 @@ export function VehiclesTab() {
     };
 
     const vehiclePayload = {
-      plate: form.plate,
-      registrationNumber: form.registrationNumber,
+      plate: editItem ? editItem.plate : form.plate,
+      registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm || 0),
       baseRentPrice: Number(form.baseRentPrice),
       nextMaintenanceKm: Number(form.nextMaintenanceKm),
@@ -182,7 +182,7 @@ export function VehiclesTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.plate) return;
     try {
-      const res = await fetch(`/api/v1/vehicles/${deleteItem.plate}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/vehicles/${encodeURIComponent(deleteItem.plate)}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
       toast.success("Araç silindi");
       setDeleteItem(null);
@@ -223,9 +223,9 @@ export function VehiclesTab() {
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Araç Düzenle" : "Yeni Araç"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Şirket ID *"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
-          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} /></Field>
+          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Marka / Model *"><Input value={form.brandModel || ""} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></Field>
-          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} /></Field>
+          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Yıl"><Input type="number" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></Field>
 
           <Field label="Tip">

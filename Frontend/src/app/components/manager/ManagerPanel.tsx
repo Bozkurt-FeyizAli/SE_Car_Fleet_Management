@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, Users, Truck, Car, ArrowLeftRight, UserCog, Settings, ShoppingCart, CreditCard, FileText, Map
 } from "lucide-react";
@@ -13,12 +13,6 @@ import { PaymentsTab } from "./tabs/PaymentsTab";
 import { DocumentsTab } from "./tabs/DocumentsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { LocationsTab } from "./tabs/LocationsTab";
-import { companies, users } from "../../data/mockData";
-
-// Simulated logged-in company admin
-export const CURRENT_COMPANY_ADMIN_ID = 2;
-export const currentCompanyAdmin = users.find(u => u.id === CURRENT_COMPANY_ADMIN_ID)!;
-export const currentCompany = companies.find(c => c.id === currentCompanyAdmin.company_id)!;
 
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,26 +29,107 @@ const tabs = [
 
 import { apiFetch } from "../../utils/api";
 
+// Dynamic Proxy equivalents to prevent White Screen crash in 9 Tabs
+export const currentCompanyAdmin = {
+  get id() { return Number(localStorage.getItem("managerUserId")) || 1; },
+  get full_name() { return localStorage.getItem("managerUserName") || "Yönetici"; },
+  get company_id() { return Number(localStorage.getItem("managerCompanyId")) || 1; }
+};
+
+export const currentCompany = {
+  get id() { return Number(localStorage.getItem("managerCompanyId")) || 1; },
+  get name() { return localStorage.getItem("managerCompanyName") || "Şirket Yükleniyor..."; },
+  get address() { return ""; },
+  get phone() { return ""; }
+};
+
 export function ManagerPanel() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [permissions, setPermissions] = useState<string[]>([]);
   const navigate = useNavigate();
 
-  React.useEffect(() => {
+  // Dynamic User and Company State
+  const [adminName, setAdminName] = useState("Yükleniyor...");
+  const [companyName, setCompanyName] = useState("Şirket Bilgisi...");
+  const [adminInitials, setAdminInitials] = useState("?");
+
+  useEffect(() => {
+    // Determine user identity from token
+    const token = localStorage.getItem("token");
+    let userEmail = "";
+    if (token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        const decoded = JSON.parse(jsonPayload);
+        // Extract email from standard JWT claims
+        userEmail = decoded.email || decoded["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"] || decoded.unique_name || "";
+      } catch(e) { console.error("Token parse error", e); }
+    }
+
+    const loadProfile = async () => {
+      try {
+        let matchedUser = null;
+        if (userEmail) {
+          // Fetch all users to find this user
+          const usersRes = await fetch("/api/User");
+          if (usersRes.ok) {
+            const users = await usersRes.json();
+            matchedUser = users.find((u: any) => u.email === userEmail);
+          }
+        }
+
+        if (matchedUser) {
+          const fullName = `${matchedUser.firstName || ''} ${matchedUser.lastName || ''}`.trim() || 'Adsız Yönetici';
+          setAdminName(fullName);
+          setAdminInitials(fullName.substring(0,2).toUpperCase());
+          
+          localStorage.setItem("managerUserId", String(matchedUser.id || 1));
+          localStorage.setItem("managerUserName", fullName);
+
+          const cId = matchedUser.companyId;
+          if (cId) {
+            localStorage.setItem("managerCompanyId", String(cId));
+            const compRes = await fetch("/api/v1/companies");
+            if (compRes.ok) {
+              const companies = await compRes.json();
+              const myComp = companies.find((c: any) => c.id === cId);
+              if (myComp) {
+                const cName = myComp.companyName || myComp.name || "İsimsiz Şirket";
+                setCompanyName(cName);
+                localStorage.setItem("managerCompanyName", cName);
+              } else {
+                setCompanyName("Şirket Bulunamadı");
+              }
+            }
+          }
+        } else {
+          // Fallback if no network
+          setAdminName("Şirket Yöneticisi");
+          setCompanyName("Bilginiz Yüklenemedi");
+          setAdminInitials("ŞY");
+        }
+      } catch (err) {
+        console.error("Profil yüklenirken hata", err);
+      }
+    };
+
+    loadProfile();
+
+    // Load permissions
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : null;
-    const managerId = user?.id || currentCompanyAdmin.id;
-
+    const managerId = user?.id || 1; // fallback
     apiFetch(`/v1/managers/${managerId}/permissions`)
       .then(res => {
-        // Assume backend returns array of strings
         const perms: string[] = Array.isArray(res) ? res : res?.permissions || res?.data || [];
         setPermissions(perms);
         localStorage.setItem('managerPermissions', JSON.stringify(perms));
       })
-      .catch(err => {
-        console.error("Yetkiler alinamadi:", err);
-      });
+      .catch(() => {});
   }, []);
 
   return (
@@ -65,19 +140,26 @@ export function ManagerPanel() {
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => navigate("/")}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 hover:bg-blue-700 transition"
+              title="Ana Sayfaya Dön"
             >
               <UserCog className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </button>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg truncate">Yonetici Paneli</h1>
+              <h1 className="text-base sm:text-lg truncate font-semibold text-foreground">Yönetici Paneli</h1>
               <p className="text-xs text-muted-foreground hidden sm:block truncate">
-                {currentCompanyAdmin.full_name} &middot; {currentCompany.name}
+                {adminName} <span className="mx-1 text-slate-500">&bull;</span> <span className="text-indigo-400 font-medium">{companyName}</span>
               </p>
             </div>
           </div>
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-sm shrink-0">
-            {currentCompanyAdmin.full_name.split(" ").map(n => n[0]).join("")}
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-medium">{adminName}</p>
+              <p className="text-xs text-muted-foreground">{companyName}</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 border border-blue-200 text-blue-800 flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">
+              {adminInitials}
+            </div>
           </div>
         </div>
       </header>
@@ -88,16 +170,16 @@ export function ManagerPanel() {
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap text-sm ${
-                  activeTab === tab.id ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
+               <button
+                 key={tab.id}
+                 onClick={() => setActiveTab(tab.id)}
+                 className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap text-sm font-medium ${
+                   activeTab === tab.id ? "border-blue-600 text-blue-600 bg-blue-50/50" : "border-transparent text-muted-foreground hover:text-foreground hover:bg-slate-50"
+                 }`}
+               >
+                 <Icon className="w-4 h-4" />
+                 {tab.label}
+               </button>
             );
           })}
         </div>
@@ -127,11 +209,11 @@ export function ManagerPanel() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex-1 min-w-[48px] flex flex-col items-center gap-0.5 px-1 py-2 transition-colors ${
-                  activeTab === tab.id ? "text-blue-600" : "text-muted-foreground"
+                  activeTab === tab.id ? "text-blue-600" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                <span className="text-[9px] leading-tight text-center whitespace-nowrap">{tab.label}</span>
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap font-medium">{tab.label}</span>
               </button>
             );
           })}
@@ -139,4 +221,6 @@ export function ManagerPanel() {
       </div>
     </div>
   );
-}export default ManagerPanel;
+}
+
+export default ManagerPanel;
