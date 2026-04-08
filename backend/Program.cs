@@ -18,6 +18,9 @@ builder.Services.AddScoped<IManagerService, ManagerService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IVehicleRegistrationService, VehicleRegistrationService>();
 
+builder.Services.AddScoped<ITripService, TripService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
+builder.Services.AddScoped<IDriverService, DriverService>();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
