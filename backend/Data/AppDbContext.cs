@@ -23,6 +23,7 @@ namespace Backend.Data
         public DbSet<Address> Addresses { get; set; }
         public DbSet<Location> Locations { get; set; }
         public DbSet<Trip> Trips { get; set; }
+        public DbSet<DriverVehicleAssignment> DriverVehicleAssignments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -76,6 +77,20 @@ namespace Backend.Data
                 .HasOne(l => l.Company)
                 .WithMany()
                 .HasForeignKey(l => l.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // DriverVehicleAssignment -> Driver
+            modelBuilder.Entity<DriverVehicleAssignment>()
+                .HasOne(dva => dva.Driver)
+                .WithMany()
+                .HasForeignKey(dva => dva.DriverId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // DriverVehicleAssignment -> Vehicle
+            modelBuilder.Entity<DriverVehicleAssignment>()
+                .HasOne(dva => dva.Vehicle)
+                .WithMany()
+                .HasForeignKey(dva => dva.VehiclePlate)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }
