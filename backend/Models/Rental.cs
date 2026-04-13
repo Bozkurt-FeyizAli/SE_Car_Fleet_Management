@@ -31,6 +31,9 @@ namespace Backend.Models
         [Column(TypeName = "decimal(12,2)")]
         public decimal? TotalPrice { get; set; }
 
+        [Required]
+        public bool IsCompleted { get; set; } = false;
+
         [ForeignKey("VehiclePlate")]
         public Vehicle Vehicle { get; set; } = null!;
 
