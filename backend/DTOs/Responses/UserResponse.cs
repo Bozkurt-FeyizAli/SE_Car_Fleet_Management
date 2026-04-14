@@ -11,6 +11,7 @@ namespace Backend.DTOs
         public string LastName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
+        public int Role { get; set; }
 
         public UserResponse() { }
 
@@ -23,6 +24,7 @@ namespace Backend.DTOs
             LastName = user.LastName;
             Email = user.Email;
             PhoneNumber = user.PhoneNumber;
+            Role = (int)user.Role;
         }
     }
 }
