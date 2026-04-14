@@ -31,6 +31,20 @@ namespace Backend.Controllers
             }
         }
 
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllTrips()
+        {
+            try
+            {
+                var trips = await _tripService.GetAllTripsAsync();
+                return Ok(trips);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPost("start")]
         public async Task<IActionResult> StartTrip([FromBody] TripRequest request)
         {

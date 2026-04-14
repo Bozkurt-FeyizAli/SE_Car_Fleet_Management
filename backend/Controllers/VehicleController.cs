@@ -48,9 +48,16 @@ namespace Backend.Controllers
         [HttpDelete("{plate}")]
         public async Task<IActionResult> DeleteVehicle(string plate)
         {
-            var success = await _vehicleService.DeleteVehicleAsync(plate);
-            if (!success) return NotFound();
-            return NoContent();
+            try
+            {
+                var success = await _vehicleService.DeleteVehicleAsync(plate);
+                if (!success) return NotFound();
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet("available")]
