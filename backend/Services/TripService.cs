@@ -38,6 +38,26 @@ namespace Backend.Services
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<TripResponse>> GetAllTripsAsync()
+        {
+            return await _context.Trips
+                .Select(t => new TripResponse
+                {
+                    Id = t.Id,
+                    DriverId = t.DriverId,
+                    VehiclePlate = t.VehiclePlate,
+                    StartLocationId = t.StartLocationId,
+                    EndLocationId = t.EndLocationId,
+                    StartTime = t.StartTime,
+                    EndTime = t.EndTime,
+                    StartKm = t.StartKm,
+                    EndKm = t.EndKm,
+                    TotalFee = t.TotalFee,
+                    Status = t.Status
+                })
+                .ToListAsync();
+        }
+
         public async Task<TripResponse> StartTripAsync(TripRequest request)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
