@@ -77,6 +77,45 @@ namespace Backend.Services
             var vehicle = await _context.Vehicles.FindAsync(plate);
             if (vehicle == null) return false;
 
+            // Aktif kiralama varsa silmeyi engelle
+            var activeRental = await _context.Rentals
+                .AnyAsync(r => r.VehiclePlate == plate && !r.IsCompleted);
+            if (activeRental)
+                throw new Exception("Bu araç şu anda kiralamada. Önce kiralamayı tamamlayın.");
+
+            // Aktif sefer varsa silmeyi engelle
+            var activeTrip = await _context.Trips
+                .AnyAsync(t => t.VehiclePlate == plate && t.Status != "Completed" && t.Status != "Cancelled");
+            if (activeTrip)
+                throw new Exception("Bu araç şu anda bir seferde. Önce seferi tamamlayın.");
+
+            // Tamamlanmış kiralama kayıtlarını sil
+            var completedRentals = await _context.Rentals
+                .Where(r => r.VehiclePlate == plate)
+                .ToListAsync();
+            _context.Rentals.RemoveRange(completedRentals);
+
+            // Tamamlanmış sefer kayıtlarını sil
+            var completedTrips = await _context.Trips
+                .Where(t => t.VehiclePlate == plate)
+                .ToListAsync();
+            _context.Trips.RemoveRange(completedTrips);
+
+            // Sürücü-araç eşleşmelerini sil
+            var assignments = await _context.DriverVehicleAssignments
+                .Where(a => a.VehiclePlate == plate)
+                .ToListAsync();
+            _context.DriverVehicleAssignments.RemoveRange(assignments);
+
+            // Sürücülerin VehiclePlate referansını temizle
+            var drivers = await _context.Drivers
+                .Where(d => d.VehiclePlate == plate)
+                .ToListAsync();
+            foreach (var driver in drivers)
+            {
+                driver.VehiclePlate = null;
+            }
+
             _context.Vehicles.Remove(vehicle);
             await _context.SaveChangesAsync();
             return true;

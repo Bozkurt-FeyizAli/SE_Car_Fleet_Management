@@ -8,5 +8,6 @@ namespace Backend.Services.Interfaces
         Task<TripResponse> StartTripAsync(TripRequest request);
         Task<TripResponse> CompleteTripAsync(int tripId, CompleteTripRequest request);
         Task<IEnumerable<TripResponse>> GetActiveTripsByCompanyAsync(int companyId);
+        Task<IEnumerable<TripResponse>> GetAllTripsAsync();
     }
 }

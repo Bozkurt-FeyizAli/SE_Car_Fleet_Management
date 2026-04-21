@@ -40,7 +40,8 @@ namespace Backend.Services
                 PasswordHash = HashIfNeeded(request.PasswordHash),
                 PhoneNumber = request.PhoneNumber,
                 TcIdentityNumber = request.TcIdentityNumber,
-                CriminalRecord = request.CriminalRecord
+                CriminalRecord = request.CriminalRecord,
+                Role = (UserRole)request.Role
             };
 
             _context.Users.Add(user);
@@ -66,6 +67,7 @@ namespace Backend.Services
             user.PhoneNumber = request.PhoneNumber;
             user.TcIdentityNumber = request.TcIdentityNumber;
             user.CriminalRecord = request.CriminalRecord;
+            user.Role = (UserRole)request.Role;
 
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
