@@ -108,12 +108,12 @@ export function DriverPanel() {
 
       <main className="p-4 sm:p-8">
         {activeTab === "profile" && <ProfileTab user={fullUserRecord} />}
-        {activeTab === "company" && <CompanyTab />}
+        {activeTab === "company" && <CompanyTab user={fullUserRecord} />}
         {activeTab === "vehicle" && <VehicleTab />}
         {activeTab === "trips" && <TripsTab />}
         {activeTab === "department" && <DepartmentTab />}
         {activeTab === "quick" && <QuickActionsTab />}
-        {activeTab === "accident" && <AccidentReportTab />}
+        {activeTab === "accident" && <AccidentReportTab user={fullUserRecord} />}
         {activeTab === "settings" && <SettingsTab />}
       </main>
     </div>

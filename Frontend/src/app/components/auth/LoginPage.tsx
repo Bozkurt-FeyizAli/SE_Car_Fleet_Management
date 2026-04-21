@@ -48,35 +48,37 @@ const LoginPage: React.FC = () => {
       }).join(''));
 
       const decodedToken = JSON.parse(jsonPayload);
-      const role = String(decodedToken.role);
+      const jwtRole = decodedToken.role || decodedToken["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || "";
+      const roleStr = String(jwtRole);
+      const apiRole = String(data.role || "");
+      
+      console.log("Login Debug - JWT Role:", roleStr, "API Role:", apiRole);
 
-      console.log("Decoded JWT Role:", role);
+      const emailLower = email.toLowerCase();
 
-      // For test accounts, forcefully map to the requested panels regardless of corrupted DB Role IDs
-      if (email === "admin@fleet.com") {
+      // Priority 1: Check numeric IDs (0: Admin, 1: Manager, 2: Driver) - THE SOURCE OF TRUTH
+      if (roleStr === "0" || apiRole === "0") {
         navigate('/admin');
-      } else if (email === "yonetici@fleet.com") {
+      } else if (roleStr === "1" || apiRole === "1") {
         navigate('/manager');
-      } else if (email === "sofor@fleet.com") {
+      } else if (roleStr === "2" || apiRole === "2") {
         navigate('/driver');
-      } else {
-        // Backend her yeni kullanıcıya JWT içinde role="User" atıyor (ve roleId'yi token'da gizliyor)
-        // Bu yüzden kimlik avcısı (heuristics) mantığını burada da kullanmalıyız!
-        const emailLower = email.toLowerCase();
-        
-        let userId;
-        try {
-           userId = decodedToken.id || decodedToken.sub || decodedToken.nameid || decodedToken["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"];
-        } catch(e) {}
-
-        if (role === "0" || role === "1" || role === "SuperAdmin" || role === "Admin" || emailLower.includes("admin")) {
-          navigate('/admin');
-        } else if (role === "3" || role === "Driver" || emailLower.includes("sofor") || emailLower.includes("şoför") || (userId && localStorage.getItem('is_driver_' + userId) === 'true')) {
-          navigate('/driver');
-        } else {
-          // Geriye kalan herkesi Şirket Yöneticisi varsayarak manager paneline yönlendiriyoruz (Asım Kökçü gibi tasiyici@fleet.com vs)
-          navigate('/manager');
-        }
+      }
+      // Priority 2: Check standard strings if IDs are missing/ambiguous
+      else if (apiRole === "Süper Admin" || roleStr === "Süper Admin" || apiRole === "Admin" || roleStr === "Admin" || emailLower === "admin@fleet.com") {
+        navigate('/admin');
+      } else if (apiRole === "Yönetici" || roleStr === "Yönetici" || roleStr === "Manager" || apiRole === "Manager" || emailLower === "yonetici@fleet.com") {
+        navigate('/manager');
+      } else if (apiRole === "Sürücü" || roleStr === "Sürücü" || roleStr === "Driver" || apiRole === "Driver" || emailLower === "sofor@fleet.com") {
+        navigate('/driver');
+      } 
+      // Priority 3: Final fallbacks based on role string content
+      else {
+        const combinedRoles = (roleStr + "|" + apiRole).toLowerCase();
+        if (combinedRoles.includes("admin")) navigate('/admin');
+        else if (combinedRoles.includes("yönetici") || combinedRoles.includes("manager")) navigate('/manager');
+        else if (combinedRoles.includes("sürücü") || combinedRoles.includes("driver") || combinedRoles.includes("sofor")) navigate('/driver');
+        else navigate('/manager'); // Default fallback
       }
 
     } catch (err: any) {

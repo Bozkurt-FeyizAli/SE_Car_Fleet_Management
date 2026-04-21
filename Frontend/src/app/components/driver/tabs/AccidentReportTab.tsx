@@ -8,24 +8,23 @@ import { Field } from "../../shared/FormDialog";
 import { DataTable, Column } from "../../shared/DataTable";
 import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
 import { accidentReports, vehicles, AccidentReport, nextId, getVehiclePlate } from "../../../data/mockData";
-const currentDriver = {
-  id: 1,
-  name: "Ahmet Yilmaz",
-  tc: "12345678901",
-  phone: "555 123 4567",
-  email: "ahmet@mail.com",
-  license_type: "E",
-  company_id: 101, 
-  department_id: 201, 
-  points: 100,
-  status: "active" as const
-};
+import { apiFetch } from "../../../utils/api";
 import { toast } from "sonner";
 
-export function AccidentReportTab() {
-  const myReports = () => accidentReports.filter(r => r.driver_id === currentDriver.id);
+export function AccidentReportTab({ user }: { user?: any }) {
+  const [liveVehicles, setLiveVehicles] = useState<any[]>([]);
+  const driverId = user?.id || (JSON.parse(localStorage.getItem('user') || '{}').id);
+  
+  const myReports = () => accidentReports.filter(r => r.driver_id === driverId);
   const [data, setData] = useState(myReports());
-  const driverVehicle = vehicles.find(v => v.current_driver_id === currentDriver.id);
+  
+  useEffect(() => {
+    apiFetch("/v1/vehicles")
+     .then(res => setLiveVehicles(Array.isArray(res) ? res : (res?.data || [])))
+     .catch(console.error);
+  }, []);
+
+  const driverVehicle = liveVehicles.find(v => v.driverId === driverId);
 
   const [form, setForm] = useState({
     description: "",
@@ -41,8 +40,8 @@ export function AccidentReportTab() {
     }
     const newReport: AccidentReport = {
       id: nextId(),
-      driver_id: currentDriver.id,
-      vehicle_id: driverVehicle?.id ?? 0,
+      driver_id: driverId,
+      vehicle_id: driverVehicle?.id || driverVehicle?.plate || 0,
       description: form.description,
       location: form.location,
       date: form.date,
@@ -59,7 +58,7 @@ export function AccidentReportTab() {
 
   const columns: Column<AccidentReport>[] = [
     { key: "date", header: "Tarih", render: (r) => new Date(r.date).toLocaleDateString("tr-TR") },
-    { key: "vehicle", header: "Arac", render: (r) => getVehiclePlate(r.vehicle_id) },
+    { key: "vehicle", header: "Araç", render: (r) => r.vehicle_id },
     { key: "location", header: "Konum", render: (r) => r.location },
     { key: "severity", header: "Siddet", render: (r) => <StatusBadge label={getStatusLabel(r.severity)} variant={getStatusVariant(r.severity)} /> },
     { key: "desc", header: "Aciklama", render: (r) => <span className="max-w-[200px] truncate block">{r.description}</span> },
@@ -94,8 +93,8 @@ export function AccidentReportTab() {
             <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Kaza ile ilgili detayli aciklama yazin..." rows={4} />
           </Field>
           {driverVehicle && (
-            <div className="text-sm text-muted-foreground p-2 rounded bg-muted/30">
-              Arac: {driverVehicle.plate_number} — {driverVehicle.brand} {driverVehicle.model}
+            <div className="text-sm text-muted-foreground p-2 rounded bg-muted/30 border border-slate-200">
+              <span className="font-bold">Araç:</span> {driverVehicle.plate} — {driverVehicle.brand} {driverVehicle.model}
             </div>
           )}
           <Button variant="destructive" onClick={handleSubmit} className="w-full">

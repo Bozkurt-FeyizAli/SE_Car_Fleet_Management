@@ -21,7 +21,7 @@ const tabs = [
   { id: "drivers", label: "Soforler", icon: Truck },
   { id: "vehicles", label: "Araclar", icon: Car },
   { id: "rentals", label: "Kiralik", icon: ArrowLeftRight },
-  { id: "orders", label: "Siparisler", icon: ShoppingCart },
+  { id: "orders", label: "Seferler", icon: ShoppingCart },
   { id: "payments", label: "Odemeler", icon: CreditCard },
   { id: "documents", label: "Belgeler", icon: FileText },
   { id: "settings", label: "Ayarlar", icon: Settings },
