@@ -6,20 +6,31 @@ import { Input } from "../../ui/input";
 import { currentCompany } from "../ManagerPanel";
 import { toast } from "sonner";
 
-export interface ApiUser {
-  id?: number;
-  roleId?: number | null;
-  parentManagerId: number | null;
-  companyId: number | null;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-  passwordHash: string | null;
-  phoneNumber: string | null;
-  tcIdentityNumber: string | null;
-  criminalRecord: string | null;
-  driverLicenseId?: string | null;
-}
+// --- GERÇEKÇİ RASTGELE VERİ ÜRETEÇLERİ ---
+export const generateTCNo = () => {
+  let digits = [];
+  digits[0] = Math.floor(Math.random() * 9) + 1;
+  for (let i = 1; i < 9; i++) digits[i] = Math.floor(Math.random() * 10);
+  let oddSum = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  let evenSum = digits[1] + digits[3] + digits[5] + digits[7];
+  digits[9] = (oddSum * 7 - evenSum) % 10;
+  let totalSum = 0;
+  for (let i = 0; i < 10; i++) totalSum += digits[i];
+  digits[10] = totalSum % 10;
+  return digits.join("");
+};
+
+export const generatePhone = () => {
+  const providers = ["532", "533", "542", "544", "505", "506", "555"];
+  const provider = providers[Math.floor(Math.random() * providers.length)];
+  const mid = Math.floor(100 + Math.random() * 899);
+  const end1 = Math.floor(10 + Math.random() * 89);
+  const end2 = Math.floor(10 + Math.random() * 89);
+  return `0${provider} ${mid} ${end1} ${end2}`;
+};
+// ------------------------------------------
+
+import { ApiUser } from "./DriversTab";
 
 export function UsersTab() {
   const [data, setData] = useState<ApiUser[]>([]);
@@ -29,6 +40,7 @@ export function UsersTab() {
   const [isLoading, setIsLoading] = useState(true);
 
   const getInitialForm = (): ApiUser => ({
+    roleId: 1, // Şirket Yöneticisi varsayılan
     parentManagerId: null,
     companyId: currentCompany.id,
     firstName: "",
@@ -38,6 +50,8 @@ export function UsersTab() {
     phoneNumber: "",
     tcIdentityNumber: "",
     criminalRecord: "",
+    departmentName: "Merkez",
+    officeNumber: "101",
   });
 
   const [form, setForm] = useState<ApiUser>(getInitialForm());
@@ -45,34 +59,37 @@ export function UsersTab() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/User");
-      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
-      const list = await res.json();
+      const [usersRes, managersRes] = await Promise.all([
+        fetch("/api/User"),
+        fetch("/api/v1/managers").catch(() => null)
+      ]);
       
-      const managersOnly = list.filter((u: any) => {
-        // Şirket uyuşmazlığı varsa geç
+      if (!usersRes.ok) throw new Error("Kullanıcılar yüklenemedi");
+      
+      const usersList: any[] = await usersRes.json();
+      let managersMap = new Map();
+      
+      if (managersRes && managersRes.ok) {
+         try {
+            const mList = await managersRes.json();
+            if (Array.isArray(mList)) {
+               mList.forEach((m: any) => {
+                  managersMap.set(m.userId, { managerId: m.id, departmentName: m.departmentName, officeNumber: m.officeNumber });
+               });
+            }
+         } catch(e) {}
+      }
+      
+      const managersOnly = usersList.filter((u: any) => {
         if (u.companyId !== currentCompany.id) return false;
-        
-        // Şoförleri hariç tutmak için Heuristics
-        if (u.roleId === 3) return false;
-        if (u.roleId === 2) return true;
-        if (localStorage.getItem('is_driver_' + u.id) === 'true') return false;
-        if (localStorage.getItem('is_manager_' + u.id) === 'true') return true;
-        
-        const emailLower = (u.email || "").toLowerCase();
-        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-        
-        // Super admin filter
-        if (emailLower.includes("admin")) return false; 
-        
-        // Şoför kelimesi geçiyorsa kesinlikle yöneticiler tablosunda durmasın
-        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return false;
-        
-        // Eğer ehliyet numarası tanımlanmışsa veya plaka tanımlanmışsa bu SÜRÜCÜDÜR.
-        if (u.driverLicenseId || u.assignedVehiclePlate || u.driverTripStatus) return false; 
-        
-        // Geri kalanları (kendisi ve diğer departman yöneticileri vs.) ekranda göster
-        return true; 
+        const roleIdVal = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
+        return roleIdVal === 1; // Şirket Yöneticisi
+      }).map((u: any) => {
+         const mData = managersMap.get(u.id);
+         if (mData) {
+            return { ...u, ...mData };
+         }
+         return u;
       });
       
       setData(managersOnly);
@@ -88,7 +105,11 @@ export function UsersTab() {
   }, [currentCompany.id]);
 
   const openAdd = () => {
-    setForm(getInitialForm());
+    setForm({
+      ...getInitialForm(),
+      tcIdentityNumber: generateTCNo(),
+      phoneNumber: generatePhone(),
+    });
     setEditItem(null);
     setShowForm(true);
   };
@@ -105,10 +126,39 @@ export function UsersTab() {
       return;
     }
 
+    if (!editItem && (!form.passwordHash || form.passwordHash.trim() === "")) {
+      toast.error("Yeni yönetici eklerken şifre belirlemek zorunludur.");
+      return;
+    }
+
+    // Sistem genelinde isim ve soyisim tekilliği kontrolü
+    try {
+      const allUsersRes = await fetch("/api/User", { cache: "no-store" });
+      if (allUsersRes.ok) {
+        const allUsers = await allUsersRes.json();
+        const duplicate = allUsers.find((u: any) => 
+          u.firstName?.toLowerCase().trim() === form.firstName?.toLowerCase().trim() &&
+          u.lastName?.toLowerCase().trim() === form.lastName?.toLowerCase().trim() &&
+          (!editItem || u.id !== editItem.id)
+        );
+        if (duplicate) {
+           toast.error("Bu isim ve soyisimde bir kişi sistemde zaten kayıtlı. Farklı şirketlerde olsalar bile aynı ismi kullanamazsınız.");
+           return;
+        }
+      }
+    } catch (e) {
+      console.error("User uniqueness check failed", e);
+    }
+
     const payload: any = {
-      ...form,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phoneNumber: form.phoneNumber,
+      tcIdentityNumber: form.tcIdentityNumber,
+      criminalRecord: form.criminalRecord,
       companyId: currentCompany.id,
-      roleId: 2, // Şirket Yöneticisi varsayılan rol
+      role: 1, // Şirket Yöneticisi varsayılan rol
       parentManagerId: null // Yöneticilerin üst yöneticisi olmaz
     };
 
@@ -140,6 +190,37 @@ export function UsersTab() {
         if (userId) {
            localStorage.setItem(`is_manager_${userId}`, 'true');
            localStorage.removeItem(`is_driver_${userId}`);
+
+           // YENİ: Manager API Entegrasyonu (Gerçek Manager Entity oluşturma/güncelleme)
+           if (editItem && editItem.managerId) {
+             // PUT /api/v1/managers/{id}
+             try {
+                await fetch(`/api/v1/managers/${editItem.managerId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userId: userId,
+                    departmentName: form.departmentName || "Merkez",
+                    officeNumber: form.officeNumber || "Yönetim",
+                    permissionIds: [0]
+                  })
+                });
+             } catch(err) { console.error("Manager Update API error:", err); }
+           } else {
+             // POST /api/v1/managers
+             try {
+                await fetch("/api/v1/managers", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userId: userId,
+                    departmentName: form.departmentName || "Merkez",
+                    officeNumber: form.officeNumber || "Yönetim",
+                    permissionIds: [0]
+                  })
+                });
+             } catch(err) { console.error("Manager Create API error:", err); }
+           }
         }
       } catch(e) {}
 
@@ -154,8 +235,19 @@ export function UsersTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.id) return;
     try {
+      // Önce Manager siliyoruz (Eğer manager id'si varsa)
+      if (deleteItem.managerId) {
+         await fetch(`/api/v1/managers/${deleteItem.managerId}`, { method: 'DELETE' });
+      }
+      
+      // Sonra ana User kaydı silinir
       const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
+      
+      // Bayrakları temizle
+      localStorage.removeItem(`is_manager_${deleteItem.id}`);
+      localStorage.removeItem(`is_driver_${deleteItem.id}`);
+      
       toast.success("Yönetici silindi");
       setDeleteItem(null);
       fetchUsers();
@@ -168,6 +260,7 @@ export function UsersTab() {
     { key: "name", header: "Ad Soyad", render: (u) => `${u.firstName || ""} ${u.lastName || ""}` },
     { key: "email", header: "E-posta", render: (u) => <span className="text-blue-600">{u.email}</span> },
     { key: "role", header: "Rol", render: () => <StatusBadge label="Şirket Yöneticisi" variant="info" /> },
+    { key: "department", header: "Departman / Ofis", render: (u) => `${u.departmentName || "Merkez"} - ${u.officeNumber || "101"}` },
     { key: "phone", header: "Telefon", render: (u) => u.phoneNumber || "—" },
     { key: "status", header: "Durum", render: () => <StatusBadge label="Aktif" variant="success" /> },
   ];
@@ -194,10 +287,12 @@ export function UsersTab() {
           <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
           <Field label="Telefon"><Input value={form.phoneNumber || ""} onChange={e => setForm({ ...form, phoneNumber: e.target.value })} /></Field>
           <Field label="TC Kimlik No"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
+          <Field label="Departman"><Input value={form.departmentName || ""} onChange={e => setForm({ ...form, departmentName: e.target.value })} placeholder="Örn: Operasyon" /></Field>
+          <Field label="Ofis/Oda No"><Input value={form.officeNumber || ""} onChange={e => setForm({ ...form, officeNumber: e.target.value })} placeholder="Örn: 201" /></Field>
           <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
           <Field label="Rol">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" disabled value="2">
-              <option value="2">Şirket Yöneticisi</option>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" disabled value="1">
+              <option value="1">Şirket Yöneticisi</option>
             </select>
           </Field>
         </div>

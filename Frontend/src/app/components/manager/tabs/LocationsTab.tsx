@@ -17,20 +17,21 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Sistem Yöneticisi için Mavi pin Icon (Kamyon temsil)
-const truckIcon = new L.Icon({
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  className: "hue-rotate-[240deg]", // Mavi/Lacivert tonlarında bir pin
+// Sistem Yöneticisi için İkon (Canlı Kamyon Pini)
+const truckDivIcon = new L.DivIcon({
+  html: `<div style="font-size: 24px; background: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #3b82f6; transform: scaleX(-1);">🚚</div>`,
+  className: "custom-truck-icon bg-transparent border-none",
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+  popupAnchor: [0, -18],
 });
 
 // OSRM üzerinden rota çizen ve pini gösteren alt component
 function TripRoute({ startLoc, endLoc, trip }: { startLoc: any, endLoc: any, trip: any }) {
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0);
+  const [currentPos, setCurrentPos] = useState<[number, number] | null>(null);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     if (!startLoc || !endLoc) return;
@@ -45,19 +46,48 @@ function TripRoute({ startLoc, endLoc, trip }: { startLoc: any, endLoc: any, tri
       }).catch(console.error);
   }, [startLoc, endLoc]);
 
+  useEffect(() => {
+    if (routeCoords.length === 0) return;
+    // Araç teleport olmasın, sefer başlangıcından itibaren 2 saatlik (7200000 ms) simülasyon üzerinden hesapla
+    const DUR = 7200000; 
+    const interval = setInterval(() => {
+      const start = trip.startTime ? new Date(trip.startTime).getTime() : Date.now() - 300000;
+      let elapsed = Date.now() - start;
+      // Eğer simülasyon 2 saati aşmışsa, tekrar başa dönmesini/ya da durmasını önlemek için modulo alıp dönmesini sağlayalım ki sürekli animasyon görebilelim.
+      let currentProgress = (elapsed % DUR) / DUR;
+      if (trip.status === "InTrip" && currentProgress >= 1) currentProgress = 0.99;
+
+      const index = Math.floor(currentProgress * (routeCoords.length - 1));
+      if (routeCoords[index]) {
+        setCurrentPos(routeCoords[index]);
+        setProgress(Math.round(currentProgress * 100));
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [routeCoords, trip.startTime, trip.status]);
+
   if (!startLoc) return null;
+  
+  const displayPos = currentPos || [startLoc.latitude, startLoc.longitude];
 
   return (
     <>
-      {routeCoords.length > 0 && <Polyline positions={routeCoords} color="#3b82f6" weight={4} opacity={0.8} dashArray="10, 10" />}
-      <Marker position={[startLoc.latitude, startLoc.longitude]} icon={truckIcon}>
+      {routeCoords.length > 0 && <Polyline positions={routeCoords} color="#3b82f6" weight={4} opacity={0.6} dashArray="5, 10" />}
+      <Marker position={displayPos as [number, number]} icon={truckDivIcon}>
         <Popup>
-          <div className="text-sm p-1">
-            <span className="font-bold text-xs bg-indigo-100 text-indigo-900 px-2 py-1 border rounded inline-block mb-2">🚚 Aktif Sefer</span><br/>
+          <div className="text-sm p-1 min-w-[200px]">
+            <span className="font-bold text-xs bg-indigo-100 text-indigo-900 px-2 py-1 border rounded inline-block mb-2 flex items-center gap-1 w-fit">🚚 Aktif Sefer</span>
             <strong>Şoför ID:</strong> {trip.driverId}<br/>
             <strong>Araç Plakası:</strong> {trip.vehiclePlate}<br/>
             <strong>Güzergah:</strong> {startLoc.locationName} ➔ {endLoc?.locationName || "Bilinmiyor"}<br/>
             {distance > 0 && <span className="text-xs text-muted-foreground mt-1 block">Hesaplanan Rota: ~{distance} km</span>}
+            <div className="mt-2 text-xs">
+              <strong>İlerleme:</strong> %{progress}
+              <div className="w-full bg-slate-200 h-2 rounded mt-1 overflow-hidden">
+                <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+              </div>
+            </div>
           </div>
         </Popup>
       </Marker>

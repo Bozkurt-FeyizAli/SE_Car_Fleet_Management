@@ -14,10 +14,13 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   // endpoint should start with a slash, e.g. "/v1/rentals"
   const url = `/api${endpoint}`;
 
-  const response = await fetch(url, {
+  const defaultOptions: RequestInit = {
+    cache: "no-store",
     ...options,
     headers,
-  });
+  };
+
+  const response = await fetch(url, defaultOptions);
 
   if (!response.ok) {
     let errorData = null;

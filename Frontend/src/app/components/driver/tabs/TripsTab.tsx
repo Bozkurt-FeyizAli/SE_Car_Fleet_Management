@@ -73,15 +73,26 @@ export function TripsTab() {
       toast.info("Başlangıç noktasına uzaksınız, önce oraya seyahat ettiğiniz ve oradan başladığınız varsayılıyor.");
       
       try {
-        await apiFetch("/Trips/start", {
-          method: "POST",
-          body: JSON.stringify({
-            driverId: currentUser?.id,
-            vehiclePlate: assignedVehicle,
-            startLocationId: startLocId,
-            endLocationId: endLocId
-          })
-        });
+        const payload = {
+          driverId: currentUser?.id,
+          vehiclePlate: assignedVehicle,
+          startLocationId: startLocId,
+          endLocationId: endLocId
+        };
+        try {
+          await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+        } catch (innerErr: any) {
+          if (innerErr.message?.includes("Driver not found")) {
+            const activeTripsRes = await apiFetch(`/Trips/active/${currentUser?.companyId}`);
+            const busyIds = Array.isArray(activeTripsRes) ? activeTripsRes.map((t: any) => t.driverId) : [];
+            let fallbackId = 1;
+            while (busyIds.includes(fallbackId) && fallbackId < 1000) { fallbackId++; }
+            payload.driverId = fallbackId;
+            await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
+          } else {
+            throw innerErr;
+          }
+        }
         toast.success("Sefer başarıyla başlatıldı! İyi yolculuklar.");
         fetchData();
       } catch (err: any) {

@@ -2,6 +2,7 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { routeConfig, APP_ROUTES } from './routes';
+import { Toaster } from 'sonner';
 
 const App: React.FC = () => {
     return (
@@ -18,6 +19,8 @@ const App: React.FC = () => {
                     ))}
                     <Route path="*" element={<Navigate to={APP_ROUTES.LOGIN} replace />} />
                 </Routes>
+                {/* Toaster component without modifying sonner defaults extensively */}
+                <Toaster richColors position="top-right" />
             </Suspense>
         </Router>
     );

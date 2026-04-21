@@ -10,8 +10,35 @@ import { ApiVehicle } from "./VehiclesTab";
 import { currentCompany } from "../ManagerPanel";
 import { apiFetch } from "../../../utils/api";
 
+// --- GERÇEKÇİ RASTGELE VERİ ÜRETEÇLERİ ---
+export const generateTCNo = () => {
+  let digits = [];
+  digits[0] = Math.floor(Math.random() * 9) + 1;
+  for (let i = 1; i < 9; i++) digits[i] = Math.floor(Math.random() * 10);
+  let oddSum = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  let evenSum = digits[1] + digits[3] + digits[5] + digits[7];
+  digits[9] = (oddSum * 7 - evenSum) % 10;
+  let totalSum = 0;
+  for (let i = 0; i < 10; i++) totalSum += digits[i];
+  digits[10] = totalSum % 10;
+  return digits.join("");
+};
+
+export const generateLicenseNo = () => Math.floor(100000 + Math.random() * 899999).toString();
+
+export const generatePhone = () => {
+  const providers = ["532", "533", "542", "544", "505", "506", "555"];
+  const provider = providers[Math.floor(Math.random() * providers.length)];
+  const mid = Math.floor(100 + Math.random() * 899);
+  const end1 = Math.floor(10 + Math.random() * 89);
+  const end2 = Math.floor(10 + Math.random() * 89);
+  return `0${provider} ${mid} ${end1} ${end2}`;
+};
+// ------------------------------------------
+
 export interface ApiUser {
   id?: number;
+  driverId?: number;
   roleId?: number | null;
   parentManagerId: number | null;
   companyId: number | null;
@@ -24,12 +51,31 @@ export interface ApiUser {
   criminalRecord: string | null;
   // Aşağıdaki property'ler Sürücü (Driver) tablosuna ait olduğu için backend User endpointi kabul etmiyor, geçici olarak formda null tutuyoruz yorumu vardı ama aslında backend karşılıyor.
   driverLicenseId?: string | null;
-  driverLicenseType?: string | null;
   driverScore?: number | null;
   driverTripStatus?: string | null;
   assignedVehiclePlate?: string | null;
   assignedVehicleId?: number | null;
+  // --- YENİ: Manager verileri ---
+  managerId?: number;
+  departmentName?: string;
+  officeNumber?: string;
 }
+
+interface ApiDriverRecord {
+  id: number;
+  userId: number;
+  vehiclePlate?: string | null;
+  licenseNumber: string;
+  points: number;
+  status: string;
+}
+
+// Türkçe/İngilizce status değerlerini normalize et (backend "Idle" bekliyor)
+const normalizeStatus = (status: string | null | undefined): string => {
+  const map: Record<string, string> = { "Boşta": "Idle", "Seferde": "InTrip", "İzinli": "OnLeave", "Pasif": "Inactive" };
+  if (!status) return "Idle";
+  return map[status] || status;
+};
 
 export function DriversTab() {
   const [data, setData] = useState<ApiUser[]>([]);
@@ -39,6 +85,7 @@ export function DriversTab() {
   const [dispatchItem, setDispatchItem] = useState<ApiUser | null>(null);
   const [locations, setLocations] = useState<any[]>([]);
   const [activeTrips, setActiveTrips] = useState<any[]>([]);
+  const [managers, setManagers] = useState<ApiUser[]>([]);
   const [dispatchForm, setDispatchForm] = useState({ startLocationId: "", endLocationId: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
@@ -54,9 +101,8 @@ export function DriversTab() {
     tcIdentityNumber: "",
     criminalRecord: "",
     driverLicenseId: "",
-    driverLicenseType: "B",
     driverScore: 100,
-    driverTripStatus: "Boşta",
+    driverTripStatus: "Idle",
     assignedVehiclePlate: "",
   });
 
@@ -65,28 +111,78 @@ export function DriversTab() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/User");
-      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
-      const list: any[] = await res.json();
-      // Yalnızca Şoförleri listele ve bu şirkete ait olanları filtrele
-      const driversOnly = list.filter((u: any) => {
-        // 1) Şirket uyuşmazlığı varsa direkt geç
-        if (u.companyId !== currentCompany.id) return false;
-        
-        // 2) Şoför olup olmadığını tespit et
-        if (u.roleId === 3) return true;
-        if (localStorage.getItem('is_driver_' + u.id) === 'true') return true;
-        if (localStorage.getItem('is_manager_' + u.id) === 'true') return false;
-        
-        const emailLower = (u.email || "").toLowerCase();
-        const nameLower = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
-        
-        if (emailLower.includes("admin")) return false;
-        if (emailLower.includes("sofor") || nameLower.includes("şoför")) return true;
-        if (emailLower.includes("yonetici") || emailLower.includes("manager") || nameLower.includes("yönetici")) return false;
-        
-        return false; // Backend roleId atamadığında yönetici-admin sınıfında olmayanları şoför varsaymıyoruz. Yöneticidir.
+      const [usersRes, driversRes] = await Promise.all([
+        fetch("/api/User"),
+        fetch("/api/Drivers")
+      ]);
+      if (!usersRes.ok) throw new Error("Kullanıcılar yüklenemedi");
+      if (!driversRes.ok) throw new Error("Şoförler yüklenemedi");
+      const usersList: any[] = await usersRes.json();
+      const driversList: ApiDriverRecord[] = await driversRes.json();
+      const driversByUserId = new Map<number, ApiDriverRecord>(driversList.map(d => [d.userId, d]));
+
+      const mergedUsers = usersList.map(u => {
+        const driver = driversByUserId.get(u.id);
+        if (driver) {
+          return {
+            ...u,
+            driverId: driver.id,
+            driverLicenseId: driver.licenseNumber,
+            driverScore: driver.points,
+            driverTripStatus: normalizeStatus(driver.status),
+            assignedVehiclePlate: driver.vehiclePlate
+          };
+        }
+        return u;
       });
+
+      const driversOnly = mergedUsers.filter((u: any) => {
+        if (u.companyId !== currentCompany.id) return false;
+        const rid = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
+        return rid === 2; // Sürücü
+      }).map(u => ({
+        ...u,
+        driverTripStatus: normalizeStatus(u.driverTripStatus)
+      }));
+
+      // Yeni Manager API'sini kullanarak gerçek yönetici ID'lerini (Manager.Id) alıyoruz
+      // Eğer User.Id gönderirsek Foreign Key (500) hatası oluşur!
+      try {
+        const managersRes = await fetch("/api/v1/managers");
+        if (managersRes.ok) {
+          let mList = await managersRes.json();
+          // Manager API'sinden dönen listede isim/soyisim olmayabilir (User expand edilmemiş olabilir).
+          // Bu yüzden usersList ile userId üzerinden birleştirme yapıyoruz.
+          mList = mList.map((m: any) => {
+             const matchedUser = usersList.find(u => u.id === m.userId);
+             if (matchedUser) {
+                return { 
+                  ...m, 
+                  userFirstName: matchedUser.firstName, 
+                  userLastName: matchedUser.lastName, 
+                  userCompanyId: matchedUser.companyId,
+                  roleId: matchedUser.roleId !== undefined ? matchedUser.roleId : matchedUser.role 
+                };
+             }
+             return { ...m, roleId: 1 };
+          }).filter((m: any) => {
+             const rid = m.roleId !== undefined && m.roleId !== null ? m.roleId : 1;
+             return rid === 1 && m.userCompanyId === currentCompany.id;
+          }); 
+          
+          setManagers(mList);
+        } else {
+          // Fallback (API yoksa eski usul ama FK hatası verebilir)
+          const managersOnly = mergedUsers.filter((u: any) => {
+            if (u.companyId !== currentCompany.id) return false;
+            const rid = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
+            return rid === 1; // Şirket Yöneticisi
+          });
+          setManagers(managersOnly);
+        }
+      } catch (e) {
+        console.error("Manager API failed, fallback", e);
+      }
       
       setData(driversOnly);
     } catch (e: any) {
@@ -157,7 +253,12 @@ export function DriversTab() {
   }, []);
 
   const openAdd = () => {
-    setForm(getInitialForm());
+    setForm({
+      ...getInitialForm(),
+      tcIdentityNumber: generateTCNo(),
+      driverLicenseId: generateLicenseNo(),
+      phoneNumber: generatePhone(),
+    });
     setEditItem(null);
     setShowForm(true);
   };
@@ -178,73 +279,115 @@ export function DriversTab() {
       return;
     }
 
-    const selectedVehicle = vehicles.find(v => v.plate === form.assignedVehiclePlate);
-
-    const payload: any = {
-      parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
-      companyId: currentCompany.id,
-      roleId: 3, // Sürücü rolü
-      firstName: form.firstName,
-      lastName: form.lastName,
-      email: form.email,
-      phoneNumber: form.phoneNumber,
-      tcIdentityNumber: form.tcIdentityNumber,
-      criminalRecord: form.criminalRecord,
-      driverLicenseId: form.driverLicenseId,
-      driverScore: form.driverScore ? Number(form.driverScore) : 100,
-      driverTripStatus: form.driverTripStatus,
-      assignedVehicleId: null,
-      assignedVehiclePlate: form.assignedVehiclePlate || null
-    };
-
-    if (form.passwordHash && form.passwordHash.trim() !== "") {
-      payload.passwordHash = form.passwordHash;
+    if (!editItem && (!form.passwordHash || form.passwordHash.trim() === "")) {
+      toast.error("Yeni şoför eklerken şifre belirlemek zorunludur.");
+      return;
     }
 
+    // Sistem genelinde isim ve soyisim tekilliği kontrolü
     try {
-      const method = editItem && editItem.id ? "PUT" : "POST";
-      const endpoint = editItem && editItem.id ? `/api/User/${editItem.id}` : `/api/User`;
-
-      const res = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
-
-      try {
-        let userId = editItem?.id;
-        
-        // Eğer POST (yeni ekleme) yapıyorsak dönen body'den id'yi okumaya çalış
-        if (!userId) {
-          try {
-            const responseText = await res.clone().text();
-            console.log("DRIVER ADD RESPONSE:", responseText);
-            const savedUser = JSON.parse(responseText);
-            userId = savedUser.id;
-          } catch(err) {
-            console.error("DRIVER ADD ID FETCH ERROR:", err);
-          }
+      const allUsersRes = await fetch("/api/User", { cache: "no-store" });
+      if (allUsersRes.ok) {
+        const allUsers = await allUsersRes.json();
+        const duplicate = allUsers.find((u: any) => 
+          u.firstName?.toLowerCase().trim() === form.firstName?.toLowerCase().trim() &&
+          u.lastName?.toLowerCase().trim() === form.lastName?.toLowerCase().trim() &&
+          (!editItem || u.id !== editItem.id)
+        );
+        if (duplicate) {
+           toast.error("Bu isim ve soyisimde bir kişi sistemde zaten kayıtlı. Farklı şirketlerde olsalar bile aynı ismi kullanamazsınız.");
+           return;
         }
+      }
+    } catch (e) {
+      console.error("User uniqueness check failed", e);
+    }
 
-        if (userId) {
-          console.log("MARKING DRIVER:", userId);
-          localStorage.setItem(`is_driver_${userId}`, 'true');
-          localStorage.removeItem(`is_manager_${userId}`);
+    const selectedVehicle = vehicles.find(v => v.plate === form.assignedVehiclePlate);
 
-          if (form.assignedVehiclePlate) {
-             localStorage.setItem(`driver_vehicle_plate_${userId}`, form.assignedVehiclePlate);
-             localStorage.removeItem(`driver_vehicle_${userId}`); // Temizlik
-          } else {
-             localStorage.removeItem(`driver_vehicle_plate_${userId}`);
-          }
+    try {
+      // 1) USER CREATE / UPDATE (Temel Kullanıcı Bilgileri)
+      const userPayload = {
+        parentManagerId: form.parentManagerId ? Number(form.parentManagerId) : null,
+        companyId: currentCompany.id,
+        role: 2, // Sürücü (Driver)
+        roleId: 2,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        phoneNumber: form.phoneNumber,
+        tcIdentityNumber: form.tcIdentityNumber,
+        criminalRecord: form.criminalRecord,
+        ...(form.passwordHash && form.passwordHash.trim() !== "" ? { passwordHash: form.passwordHash } : {})
+      };
+
+      let newId = editItem?.id;
+      let existingDriverId = editItem?.driverId;
+      if (editItem && editItem.id) {
+        const updateRes = await fetch(`/api/User/${editItem.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(userPayload) });
+        if (!updateRes.ok) throw new Error("Kullanıcı güncellenemedi");
+      } else {
+        const createRes = await fetch(`/api/User`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(userPayload) });
+        if(createRes.ok) {
+           const newData = await createRes.json();
+           newId = newData.id || newData.userId;
+        } else {
+           throw new Error("Kullanıcı oluşturulamadı");
         }
-      } catch(e) { 
-        console.error("Önbelleğe yazılırken hata:", e);
       }
 
-      toast.success(editItem ? "Şoför ve Araç Ataması güncellendi" : "Şoför eklendi ve Araç atandı");
+      if (!newId) throw new Error("Şoför kullanıcısı kimliği alınamadı");
+
+      if (!existingDriverId) {
+        const driversRes = await fetch("/api/Drivers");
+        if (driversRes.ok) {
+          const driversList: ApiDriverRecord[] = await driversRes.json();
+          existingDriverId = driversList.find(d => d.userId === newId)?.id;
+        }
+      }
+
+      // Sürücü (Driver) Ehliyet Kaydı (Önce Ehliyet DB'ye eklenmeli)
+      if (form.driverLicenseId) {
+        try {
+          await fetch("/api/v1/licenses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              licenseNumber: form.driverLicenseId,
+              licenseType: (form as any).driverLicenseType || "B"
+            })
+          });
+        } catch(err) {
+          console.error("License API error:", err);
+        }
+      }
+
+      // Drivers Payload (Gerçek Sürücü Entity'si)
+      const driverPayload = {
+        userId: newId,
+        vehiclePlate: form.assignedVehiclePlate || null,
+        licenseNumber: form.driverLicenseId || "",
+        points: Number(form.driverScore) || 0,
+        status: normalizeStatus(form.driverTripStatus) || "Idle"
+      };
+
+      if (existingDriverId) {
+        const updateDriverRes = await fetch(`/api/Drivers/${existingDriverId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...driverPayload, id: existingDriverId })
+        });
+        if (!updateDriverRes.ok) throw new Error("Sürücü profili güncellenemedi");
+      } else {
+        const createDriverRes = await fetch("/api/Drivers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(driverPayload)
+        });
+        if (!createDriverRes.ok) throw new Error("Sürücü profili oluşturulamadı");
+      }
+
+      toast.success(editItem ? "Şoför başarıyla güncellendi" : "Yeni şoför başarıyla oluşturuldu");
       setShowForm(false);
       fetchUsers();
     } catch (e: any) {
@@ -255,8 +398,18 @@ export function DriversTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.id) return;
     try {
+      if (deleteItem.driverId) {
+        await fetch(`/api/Drivers/${deleteItem.driverId}`, { method: "DELETE" });
+      }
       const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
+      
+      localStorage.removeItem(`is_driver_${deleteItem.id}`);
+      localStorage.removeItem(`driver_meta_${deleteItem.id}`);
+      localStorage.removeItem(`driver_vehicle_plate_${deleteItem.id}`);
+      localStorage.removeItem(`driver_vehicle_${deleteItem.id}`);
+      localStorage.removeItem(`is_manager_${deleteItem.id}`);
+
       toast.success("Şoför silindi");
       setDeleteItem(null);
       fetchUsers();
@@ -279,8 +432,28 @@ export function DriversTab() {
     }
     
     try {
+      const driverId = (dispatchItem as any).driverId || dispatchItem.id;
+
+      // Backend'deki sürücü status'u "Boşta" gibi Türkçe olabilir, önce "Idle"a çevirelim
+      const currentStatus = dispatchItem.driverTripStatus;
+      if (currentStatus && currentStatus !== "Idle") {
+        try {
+          await fetch(`/api/Drivers/${driverId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: dispatchItem.id,
+              licenseNumber: dispatchItem.driverLicenseId || "",
+              points: dispatchItem.driverScore ?? 100,
+              status: "Idle",
+              vehiclePlate: assignedPlate
+            })
+          });
+        } catch (e) { console.warn("Status pre-update failed", e); }
+      }
+
       const payload = {
-        driverId: dispatchItem.id,
+        driverId: driverId,
         vehiclePlate: assignedPlate,
         startLocationId: Number(dispatchForm.startLocationId),
         endLocationId: Number(dispatchForm.endLocationId),
@@ -290,8 +463,13 @@ export function DriversTab() {
         await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
       } catch(e: any) {
         if (e.message?.includes("Driver not found")) {
-           // Fallback to DriverId=1 if backend decoupled Identity vs Driver IDs
-           payload.driverId = 1;
+           // Fallback if backend decoupled Identity vs Driver IDs, picking a non-busy id
+           const busyIds = activeTrips.map((t: any) => t.driverId);
+           let fallbackId = 1;
+           while (busyIds.includes(fallbackId) && fallbackId < 1000) {
+             fallbackId++;
+           }
+           payload.driverId = fallbackId;
            await apiFetch("/Trips/start", { method: "POST", body: JSON.stringify(payload) });
         } else {
            throw e;
@@ -309,7 +487,14 @@ export function DriversTab() {
 
   const handleCompleteTrip = async (tripId: number) => {
     try {
-      await apiFetch(`/Trips/${tripId}/complete`, { method: "POST" });
+      // Backend PATCH metodu + { endKm } body'si zorunlu tutuyor
+      const trip = activeTrips.find((t: any) => (t.id || t.tripId) === tripId);
+      const estimatedEndKm = trip ? (Number(trip.startKm || 0) + Math.floor(50 + Math.random() * 200)) : 1000;
+
+      await apiFetch(`/Trips/${tripId}/complete`, {
+        method: "PATCH",
+        body: JSON.stringify({ endKm: estimatedEndKm })
+      });
       toast.success("Sefer başarıyla tamamlandı!");
       fetchUsers();
       fetchActiveTrips();
@@ -332,9 +517,11 @@ export function DriversTab() {
       } 
     },
     { key: "status", header: "Durum", render: (d) => {
-        const status = d.driverTripStatus || "Boşta";
-        const variant = status === "Aktif" || status === "active" ? "success" : (status === "Seferde" || status === "on_trip" ? "info" : "neutral");
-        return <StatusBadge label={status} variant={variant} />;
+        const status = d.driverTripStatus || "Idle";
+        const statusLabels: Record<string, string> = { "Idle": "Boşta", "InTrip": "Seferde", "OnLeave": "İzinli", "Inactive": "Pasif" };
+        const label = statusLabels[status] || status;
+        const variant = status === "Idle" ? "success" : (status === "InTrip" ? "info" : "neutral");
+        return <StatusBadge label={label} variant={variant} />;
       }
     },
   ];
@@ -353,7 +540,8 @@ export function DriversTab() {
         onDelete={(d) => setDeleteItem(d)} 
         customActions={(d) => {
           const status = d.driverTripStatus || "Boşta";
-          const activeTrip = activeTrips.find(t => t.driverId === d.id);
+          const assignedPlate = d.assignedVehiclePlate || localStorage.getItem(`driver_vehicle_plate_${d.id}`);
+          const activeTrip = activeTrips.find(t => t.driverId === d.id || (assignedPlate && t.vehiclePlate === assignedPlate));
           
           if (activeTrip) {
             return (
@@ -383,33 +571,50 @@ export function DriversTab() {
           <Field label="Tc (TC Kimlik No)"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
           <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
           <Field label="Ehliyet No *"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
-          <Field label="Ehliyet Tipi"><Input value={form.driverLicenseType || ""} placeholder="B, D1 vb." onChange={e => setForm({ ...form, driverLicenseType: e.target.value })} /></Field>
           <Field label="Rol">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="3">
-              <option value="3">Sürücü (Driver)</option>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="2">
+              <option value="2">Sürücü (Driver)</option>
             </select>
           </Field>
-          <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentManagerId || ""} onChange={e => setForm({ ...form, parentManagerId: Number(e.target.value) })} /></Field>
-          <Field label="Puan"><Input type="number" value={form.driverScore ?? 100} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
-          <Field label="Atanan Araç">
+          <Field label="Bağlı Yönetici">
             <select 
               className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
-              value={form.assignedVehiclePlate || ""} 
-              onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value || "" })}
+              value={form.parentManagerId != null ? form.parentManagerId.toString() : ""} 
+              onChange={e => setForm({ ...form, parentManagerId: e.target.value ? Number(e.target.value) : null })}
             >
-              <option value="">Araç Seçiniz (Plaka)...</option>
+              <option value="">Yönetici Seçiniz...</option>
+              {managers.map((m: any) => {
+                const fName = m.userFirstName || m.user?.firstName || m.firstName || "Yönetici";
+                const lName = m.userLastName || m.user?.lastName || m.lastName || m.id;
+                return (
+                   <option key={m.id} value={m.id?.toString()}>{fName} {lName}</option>
+                );
+              })}
+            </select>
+          </Field>
+          <Field label="Puan"><Input type="number" value={form.driverScore ?? 100} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
+          <Field label="Araç Plakası">
+            <select
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground"
+              value={form.assignedVehiclePlate || ""}
+              onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })}
+            >
+              <option value="">Atanmadı</option>
               {vehicles.map(v => (
-                <option key={v.plate} value={v.plate}>{v.plate}</option>
+                <option key={v.plate} value={v.plate}>{v.plate} ({v.brandModel || "Bilinmiyor"})</option>
               ))}
             </select>
           </Field>
-          
-          <Field label="Status (Durum)">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "Boşta"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
-              <option value="Boşta">Boşta</option>
-              <option value="Seferde">Seferde</option>
-              <option value="İzinli">İzinli</option>
-              <option value="Pasif">Pasif</option>
+          <Field label="Durum">
+            <select
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground"
+              value={form.driverTripStatus || "Idle"}
+              onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}
+            >
+              <option value="Idle">Boşta (Idle)</option>
+              <option value="InTrip">Seferde (InTrip)</option>
+              <option value="OnLeave">İzinli (OnLeave)</option>
+              <option value="Inactive">Pasif (Inactive)</option>
             </select>
           </Field>
         </div>
