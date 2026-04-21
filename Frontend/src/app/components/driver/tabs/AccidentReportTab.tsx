@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../ui/card";
 import { Input } from "../../ui/input";
@@ -14,14 +14,14 @@ import { toast } from "sonner";
 export function AccidentReportTab({ user }: { user?: any }) {
   const [liveVehicles, setLiveVehicles] = useState<any[]>([]);
   const driverId = user?.id || (JSON.parse(localStorage.getItem('user') || '{}').id);
-  
+
   const myReports = () => accidentReports.filter(r => r.driver_id === driverId);
   const [data, setData] = useState(myReports());
-  
+
   useEffect(() => {
     apiFetch("/v1/vehicles")
-     .then(res => setLiveVehicles(Array.isArray(res) ? res : (res?.data || [])))
-     .catch(console.error);
+      .then(res => setLiveVehicles(Array.isArray(res) ? res : (res?.data || [])))
+      .catch(console.error);
   }, []);
 
   const driverVehicle = liveVehicles.find(v => v.driverId === driverId);
