@@ -6,15 +6,44 @@ import { Input } from "../../ui/input";
 import { toast } from "sonner";
 import { ApiVehicle } from "../../manager/tabs/VehiclesTab";
 
+// --- GERÇEKÇİ RASTGELE VERİ ÜRETEÇLERİ ---
+export const generateTCNo = () => {
+  let digits = [];
+  digits[0] = Math.floor(Math.random() * 9) + 1;
+  for (let i = 1; i < 9; i++) digits[i] = Math.floor(Math.random() * 10);
+  let oddSum = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  let evenSum = digits[1] + digits[3] + digits[5] + digits[7];
+  digits[9] = (oddSum * 7 - evenSum) % 10;
+  let totalSum = 0;
+  for (let i = 0; i < 10; i++) totalSum += digits[i];
+  digits[10] = totalSum % 10;
+  return digits.join("");
+};
+
+export const generateLicenseNo = () => Math.floor(100000 + Math.random() * 899999).toString();
+
+export const generatePhone = () => {
+  const providers = ["532", "533", "542", "544", "505", "506", "555"];
+  const provider = providers[Math.floor(Math.random() * providers.length)];
+  const mid = Math.floor(100 + Math.random() * 899);
+  const end1 = Math.floor(10 + Math.random() * 89);
+  const end2 = Math.floor(10 + Math.random() * 89);
+  return `0${provider} ${mid} ${end1} ${end2}`;
+};
+// ------------------------------------------
+
 export interface ApiUser {
   id?: number;
+  driverId?: number;
   roleId: number | null;
   parentUserId: number | null;
+  companyId?: number | null;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
   passwordHash: string | null;
-  phone: string | null;
+  phoneNumber?: string | null;
+  phone?: string | null;
   tcIdentityNumber: string | null;
   criminalRecord: string | null;
   driverLicenseId: string | null;
@@ -23,6 +52,21 @@ export interface ApiUser {
   assignedVehicleId?: number | null;
   assignedVehiclePlate?: string | null;
 }
+
+interface ApiDriverRecord {
+  id: number;
+  userId: number;
+  vehiclePlate?: string | null;
+  licenseNumber: string;
+  points: number;
+  status: string;
+}
+
+const normalizeStatus = (status: string | null | undefined): string => {
+  const map: Record<string, string> = { "Boşta": "Idle", "Seferde": "InTrip", "İzinli": "OnLeave", "Pasif": "Inactive", "active": "Idle", "on_trip": "InTrip" };
+  if (!status) return "Idle";
+  return map[status] || status;
+};
 
 export function DriversTab() {
   const [data, setData] = useState<ApiUser[]>([]);
@@ -53,10 +97,29 @@ export function DriversTab() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/User");
-      if (!res.ok) throw new Error("Kullanıcılar yüklenemedi");
-      const list = await res.json();
-      setData(list);
+      const [usersRes, driversRes] = await Promise.all([
+        fetch("/api/User"),
+        fetch("/api/Drivers")
+      ]);
+      if (!usersRes.ok) throw new Error("Kullanıcılar yüklenemedi");
+      if (!driversRes.ok) throw new Error("Şoförler yüklenemedi");
+      const usersList: any[] = await usersRes.json();
+      const driversList: ApiDriverRecord[] = await driversRes.json();
+      const driversByUserId = new Map<number, ApiDriverRecord>(driversList.map(d => [d.userId, d]));
+
+      const driversOnly = usersList.filter((u: any) => {
+        const rid = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
+        return rid === 2; // Sürücü
+      }).map(u => ({
+        ...u,
+        driverId: driversByUserId.get(u.id)?.id,
+        driverLicenseId: driversByUserId.get(u.id)?.licenseNumber || u.driverLicenseId,
+        driverScore: driversByUserId.get(u.id)?.points ?? u.driverScore,
+        assignedVehiclePlate: driversByUserId.get(u.id)?.vehiclePlate || u.assignedVehiclePlate,
+        driverTripStatus: normalizeStatus(driversByUserId.get(u.id)?.status || u.driverTripStatus)
+      }));
+      
+      setData(driversOnly);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -82,7 +145,12 @@ export function DriversTab() {
   }, []);
 
   const openAdd = () => {
-    setForm(getInitialForm());
+    setForm({
+      ...getInitialForm(),
+      tcIdentityNumber: generateTCNo(),
+      driverLicenseId: generateLicenseNo(),
+      phoneNumber: generatePhone(),
+    });
     setEditItem(null);
     setShowForm(true);
   };
@@ -99,39 +167,119 @@ export function DriversTab() {
       return;
     }
 
-    const payload = {
-      ...form,
-      roleId: 3,
-      parentUserId: form.parentUserId ? Number(form.parentUserId) : null,
-      driverScore: form.driverScore ? Number(form.driverScore) : null,
-      assignedVehicleId: form.assignedVehicleId ? Number(form.assignedVehicleId) : null,
-    };
+    if (!editItem && (!form.passwordHash || form.passwordHash.trim() === "")) {
+      toast.error("Yeni şoför eklerken şifre belirlemek zorunludur.");
+      return;
+    }
+
+    if (!form.companyId) {
+      toast.error("Şirket ID zorunludur.");
+      return;
+    }
+
+    // Sistem genelinde isim ve soyisim tekilliği kontrolü
+    try {
+      const allUsersRes = await fetch("/api/User", { cache: "no-store" });
+      if (allUsersRes.ok) {
+        const allUsers = await allUsersRes.json();
+        const duplicate = allUsers.find((u: any) => 
+          u.firstName?.toLowerCase().trim() === form.firstName?.toLowerCase().trim() &&
+          u.lastName?.toLowerCase().trim() === form.lastName?.toLowerCase().trim() &&
+          (!editItem || u.id !== editItem.id)
+        );
+        if (duplicate) {
+           toast.error("Bu isim ve soyisimde bir kişi sistemde zaten kayıtlı. Farklı şirketlerde olsalar bile aynı ismi kullanamazsınız.");
+           return;
+        }
+      }
+    } catch (e) {
+      console.error("User uniqueness check failed", e);
+    }
 
     try {
-      const method = editItem && editItem.id ? "PUT" : "POST";
-      const endpoint = editItem && editItem.id ? `/api/User/${editItem.id}` : `/api/User`;
+      // 1) USER CREATE / UPDATE (Temel Kullanıcı Bilgileri)
+      const userPayload = {
+        parentManagerId: form.parentUserId ? Number(form.parentUserId) : null,
+        companyId: Number(form.companyId),
+        role: 2, // Sürücü (Driver)
+        roleId: 2,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        phoneNumber: form.phoneNumber || form.phone,
+        tcIdentityNumber: form.tcIdentityNumber,
+        criminalRecord: form.criminalRecord,
+        ...(form.passwordHash && form.passwordHash.trim() !== "" ? { passwordHash: form.passwordHash } : {})
+      };
 
-      const res = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      let newId = editItem?.id;
+      let existingDriverId = editItem?.driverId;
 
-      if (!res.ok) throw new Error("Kaydetme işlemi başarısız");
-
-      try {
-        const savedUser = await res.clone().json();
-        const userId = savedUser.id || editItem?.id;
-        if (userId) {
-          if (payload.assignedVehicleId) {
-             localStorage.setItem(`driver_vehicle_${userId}`, String(payload.assignedVehicleId));
-          } else {
-             localStorage.removeItem(`driver_vehicle_${userId}`);
-          }
+      if (editItem && editItem.id) {
+        const updateRes = await fetch(`/api/User/${editItem.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(userPayload) });
+        if (!updateRes.ok) throw new Error("Kullanıcı güncellenemedi");
+      } else {
+        const createRes = await fetch(`/api/User`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(userPayload) });
+        if(createRes.ok) {
+          const created = await createRes.json();
+          newId = created.id || created.userId;
+        } else {
+          throw new Error("Kullanıcı oluşturulamadı");
         }
-      } catch(e) { }
+      }
 
-      toast.success(editItem ? "Şoför/Kullanıcı güncellendi" : "Şoför/Kullanıcı eklendi");
+      if (!newId) throw new Error("Şoför kullanıcısı kimliği alınamadı");
+
+      if (!existingDriverId) {
+        const driversRes = await fetch("/api/Drivers");
+        if (driversRes.ok) {
+          const driversList: ApiDriverRecord[] = await driversRes.json();
+          existingDriverId = driversList.find(d => d.userId === newId)?.id;
+        }
+      }
+
+      // Sürücü (Driver) Ehliyet Kaydı (Önce Ehliyet DB'ye eklenmeli)
+      if (form.driverLicenseId) {
+        try {
+          await fetch("/api/v1/licenses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              licenseNumber: form.driverLicenseId,
+              licenseType: (form as any).driverLicenseType || "B"
+            })
+          });
+        } catch(err) {
+          console.error("License API error:", err);
+        }
+      }
+
+      // 2) Sürücü (Driver) Profili Ekle/Güncelle
+      const driverPayload = {
+        userId: newId,
+        vehiclePlate: form.assignedVehiclePlate || null,
+        licenseNumber: form.driverLicenseId || "",
+        points: Number(form.driverScore) || 0,
+        status: normalizeStatus(form.driverTripStatus) || "Idle"
+      };
+
+      if (existingDriverId) {
+        const updateDriverRes = await fetch(`/api/Drivers/${existingDriverId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...driverPayload, id: existingDriverId })
+        });
+        if (!updateDriverRes.ok) throw new Error("Sürücü profili güncellenemedi");
+      } else {
+        const createDriverRes = await fetch("/api/Drivers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(driverPayload)
+        });
+        if (!createDriverRes.ok) throw new Error("Sürücü profili oluşturulamadı");
+      }
+
+      toast.success(editItem ? "Şoför başarıyla güncellendi" : "Yeni şoför başarıyla oluşturuldu");
       setShowForm(false);
       fetchUsers();
     } catch (e: any) {
@@ -142,8 +290,18 @@ export function DriversTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.id) return;
     try {
+      if (deleteItem.driverId) {
+        await fetch(`/api/Drivers/${deleteItem.driverId}`, { method: "DELETE" });
+      }
       const res = await fetch(`/api/User/${deleteItem.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
+      
+      // Clean up local storage assignments to free the vehicle
+      localStorage.removeItem(`is_driver_${deleteItem.id}`);
+      localStorage.removeItem(`driver_vehicle_plate_${deleteItem.id}`);
+      localStorage.removeItem(`driver_vehicle_${deleteItem.id}`);
+      localStorage.removeItem(`is_manager_${deleteItem.id}`);
+
       toast.success("Şoför silindi");
       setDeleteItem(null);
       fetchUsers();
@@ -201,31 +359,35 @@ export function DriversTab() {
           <Field label="Sicil Kaydı (Criminal Record)"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
           <Field label="Ehliyet No *"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
           <Field label="Rol">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="3">
-              <option value="3">Şoför (Driver)</option>
+            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="2">
+              <option value="2">Şoför (Driver)</option>
             </select>
           </Field>
+          <Field label="Şirket ID *"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
           <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentUserId || ""} onChange={e => setForm({ ...form, parentUserId: Number(e.target.value) })} /></Field>
           <Field label="Sürücü Puanı"><Input type="number" value={form.driverScore || 0} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
-          <Field label="Atanan Araç">
-            <select 
-              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
-              value={form.assignedVehicleId || ""} 
-              onChange={e => setForm({ ...form, assignedVehicleId: e.target.value ? Number(e.target.value) : null })}
+          <Field label="Araç Plakası">
+            <select
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground"
+              value={form.assignedVehiclePlate || ""}
+              onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })}
             >
-              <option value="">Araç Seçiniz...</option>
+              <option value="">Atanmadı</option>
               {vehicles.map(v => (
-                <option key={v.id || v.plate} value={v.id}>{v.plate}</option>
+                <option key={v.plate} value={v.plate}>{v.plate}</option>
               ))}
             </select>
           </Field>
-          
           <Field label="Durum">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.driverTripStatus || "active"} onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}>
-              <option value="active">Aktif</option>
-              <option value="on_trip">Seferde</option>
-              <option value="off_duty">İzinli</option>
-              <option value="inactive">Pasif</option>
+            <select
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground"
+              value={form.driverTripStatus || "Idle"}
+              onChange={e => setForm({ ...form, driverTripStatus: e.target.value })}
+            >
+              <option value="Idle">Boşta (Idle)</option>
+              <option value="InTrip">Seferde (InTrip)</option>
+              <option value="OnLeave">İzinli (OnLeave)</option>
+              <option value="Inactive">Pasif (Inactive)</option>
             </select>
           </Field>
         </div>

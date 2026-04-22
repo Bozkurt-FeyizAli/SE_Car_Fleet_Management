@@ -58,7 +58,19 @@ namespace Backend.Services
         public async Task<IEnumerable<RentalResponse>> GetMyRentalsAsync(int companyId)
         {
             var rentals = await _context.Rentals
+                .Include(r => r.Vehicle).ThenInclude(v => v.Company)
+                .Include(r => r.RenterCompany)
                 .Where(r => r.RenterCompanyId == companyId)
+                .ToListAsync();
+
+            return rentals.Select(r => new RentalResponse(r));
+        }
+
+        public async Task<IEnumerable<RentalResponse>> GetAllRentalsAsync()
+        {
+            var rentals = await _context.Rentals
+                .Include(r => r.Vehicle).ThenInclude(v => v.Company)
+                .Include(r => r.RenterCompany)
                 .ToListAsync();
 
             return rentals.Select(r => new RentalResponse(r));
@@ -81,6 +93,7 @@ namespace Backend.Services
                     throw new Exception("Araç bulunamadı.");
 
                 rental.ReturnDate = request.ReturnDate;
+                rental.IsCompleted = true;
                 
                 int rentedDays = (request.ReturnDate.Date - rental.StartDate.Date).Days;
                 if (rentedDays <= 0) rentedDays = 1;

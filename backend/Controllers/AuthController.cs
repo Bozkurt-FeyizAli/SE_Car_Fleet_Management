@@ -52,7 +52,8 @@ namespace Backend.Controllers
                 UserId = user.Id,
                 Email = user.Email,
                 FirstName = user.FirstName,
-                LastName = user.LastName
+                LastName = user.LastName,
+                Role = (int)user.Role
             });
         }
 
@@ -67,7 +68,7 @@ namespace Backend.Controllers
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.GivenName, user.FirstName),
                 new Claim(ClaimTypes.Surname, user.LastName),
-                new Claim(ClaimTypes.Role, "User"),
+                new Claim(ClaimTypes.Role, ((int)user.Role).ToString()),
                 new Claim("CompanyId", user.CompanyId.ToString())
             };
 

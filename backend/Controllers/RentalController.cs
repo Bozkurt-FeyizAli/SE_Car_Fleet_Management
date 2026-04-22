@@ -46,6 +46,20 @@ namespace Backend.Controllers
             return Ok(rentals);
         }
 
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllRentals()
+        {
+            try
+            {
+                var rentals = await _rentalService.GetAllRentalsAsync();
+                return Ok(rentals);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPatch("{id}/return")]
         public async Task<IActionResult> ReturnRental(int id, [FromBody] ReturnRentalRequest request)
         {

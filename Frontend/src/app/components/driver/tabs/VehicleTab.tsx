@@ -44,9 +44,21 @@ export function VehicleTab() {
         const currentUser = users.find(u => u.email === email);
 
         if (currentUser) {
-          // Frontend fallback: read from localStorage if backend doesn't return it
+          // ÖNEMLİ: Araç ataması Drivers tablosunda tutulduğu için bu listeyi de çekmeliyiz
+          const driversRes = await fetch("/api/Drivers");
+          let assignedPlate = "";
+          
+          if (driversRes.ok) {
+            const driversList = await driversRes.json();
+            const matchingDriver = driversList.find((d: any) => d.userId === currentUser.id);
+            if (matchingDriver) {
+              assignedPlate = matchingDriver.vehiclePlate;
+            }
+          }
+
+          // Eğer Drivers tablosundan gelmediyse localStorage fallback kullan
           const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${currentUser.id}`);
-          const vehiclePlate = currentUser.assignedVehiclePlate || localVehiclePlate;
+          const vehiclePlate = assignedPlate || currentUser.assignedVehiclePlate || localVehiclePlate;
 
           if (vehiclePlate) {
             const vRes = await fetch(`/api/v1/vehicles`);

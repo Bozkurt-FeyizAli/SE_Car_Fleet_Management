@@ -1,6 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+public enum UserRole
+{
+    SistemAdmin,
+    Yönetici,
+    Sürücü
+}
+
 namespace Backend.Models
 {
     public class User
@@ -39,6 +46,9 @@ namespace Backend.Models
         public string TcIdentityNumber { get; set; } = string.Empty;
 
         public string? CriminalRecord { get; set; }
+
+        [Required]
+        public UserRole Role { get; set; } = UserRole.Sürücü;
 
         [ForeignKey("ParentManagerId")]
         public Manager? ParentManager { get; set; }

@@ -4,6 +4,7 @@ import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/Stat
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
+import { apiFetch } from "../../../utils/api";
 
 // Fetch'den dönecek olan Swagger yapısına uygun interface
 export interface ApiVehicleRegistration {
@@ -27,6 +28,7 @@ export interface ApiVehicle {
   isActive: boolean;
   companyId?: number;
   damageRecordAmount?: number;
+  status?: string;
   // UI fields merged from registration
   brandModel?: string | null;
   year?: number;
@@ -74,6 +76,29 @@ export function VehiclesTab() {
       
       const vehicles: ApiVehicle[] = await vRes.json();
       const regs: ApiVehicleRegistration[] = await rRes.json();
+
+      // Aktif kiralamaları çek (iade edilmemiş)
+      let rentedPlates = new Set<string>();
+      try {
+        const rentals = await apiFetch("/v1/rentals/my-rentals");
+        const rentalList = Array.isArray(rentals) ? rentals : (rentals?.data || []);
+        rentedPlates = new Set(
+          rentalList.filter((r: any) => !r.returnDate).map((r: any) => r.vehiclePlate)
+        );
+      } catch (err) {}
+
+      // Aktif seferleri çek — tüm şirketler için
+      let onTripPlates = new Set<string>();
+      try {
+        // Her şirketin aktif seferlerini topla
+        const companyIds = [...new Set(vehicles.map(v => v.companyId).filter(Boolean))];
+        const tripPromises = companyIds.map(cId => apiFetch(`/Trips/active/${cId}`).catch(() => []));
+        const tripResults = await Promise.all(tripPromises);
+        const allTrips = tripResults.flat();
+        onTripPlates = new Set(
+          allTrips.map((t: any) => t.vehiclePlate).filter(Boolean)
+        );
+      } catch (err) {}
       
       const merged = vehicles.map(v => {
         const r = regs.find(reg => reg.registrationNumber === v.registrationNumber);
@@ -82,7 +107,9 @@ export function VehiclesTab() {
           brandModel: r?.brandModel,
           year: r?.year,
           vehicleType: r?.type,
-          capacityKg: r?.capacity
+          capacityKg: r?.capacity,
+          isRented: rentedPlates.has(v.plate),
+          isOnTrip: onTripPlates.has(v.plate)
         };
       });
       
@@ -132,8 +159,8 @@ export function VehiclesTab() {
     };
 
     const vehiclePayload = {
-      plate: form.plate,
-      registrationNumber: form.registrationNumber,
+      plate: editItem ? editItem.plate : form.plate,
+      registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm || 0),
       baseRentPrice: Number(form.baseRentPrice),
       nextMaintenanceKm: Number(form.nextMaintenanceKm),
@@ -182,7 +209,7 @@ export function VehiclesTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.plate) return;
     try {
-      const res = await fetch(`/api/v1/vehicles/${deleteItem.plate}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/vehicles/${encodeURIComponent(deleteItem.plate)}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Silme işlemi başarısız");
       toast.success("Araç silindi");
       setDeleteItem(null);
@@ -204,7 +231,12 @@ export function VehiclesTab() {
     { key: "doc", header: "Ruhsat No", render: (v) => v.registrationNumber || "—" },
     { key: "kasko", header: "Kasko Bitiş", render: (v) => formatDate(v.cascoEndDate) },
     { key: "insurance", header: "Sigorta Bitiş", render: (v) => formatDate(v.insuranceEndDate) },
-    { key: "status", header: "Durum", render: (v) => <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "neutral"} /> },
+    { key: "status", header: "Durum", render: (v) => {
+        if ((v as any).isOnTrip) return <StatusBadge label="Seferde" variant="info" />;
+        if ((v as any).isRented) return <StatusBadge label="Aktif (Kirada)" variant="warning" />;
+        return <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "danger"} />;
+      }
+    },
   ];
 
   return (
@@ -223,9 +255,9 @@ export function VehiclesTab() {
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Araç Düzenle" : "Yeni Araç"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Şirket ID *"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
-          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} /></Field>
+          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Marka / Model *"><Input value={form.brandModel || ""} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></Field>
-          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} /></Field>
+          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Yıl"><Input type="number" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></Field>
 
           <Field label="Tip">

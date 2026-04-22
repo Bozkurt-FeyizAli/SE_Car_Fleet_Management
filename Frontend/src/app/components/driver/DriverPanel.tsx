@@ -75,7 +75,11 @@ export function DriverPanel() {
           </div>
         </div>
         <button 
-          onClick={() => { localStorage.clear(); navigate('/'); }}
+            onClick={() => { 
+              localStorage.removeItem('token'); 
+              localStorage.removeItem('user'); 
+              navigate('/'); 
+            }}
           className="text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-md hover:bg-red-500/20 transition-colors"
         >
           Çıkış Yap
@@ -104,12 +108,12 @@ export function DriverPanel() {
 
       <main className="p-4 sm:p-8">
         {activeTab === "profile" && <ProfileTab user={fullUserRecord} />}
-        {activeTab === "company" && <CompanyTab />}
+        {activeTab === "company" && <CompanyTab user={fullUserRecord} />}
         {activeTab === "vehicle" && <VehicleTab />}
         {activeTab === "trips" && <TripsTab />}
         {activeTab === "department" && <DepartmentTab />}
         {activeTab === "quick" && <QuickActionsTab />}
-        {activeTab === "accident" && <AccidentReportTab />}
+        {activeTab === "accident" && <AccidentReportTab user={fullUserRecord} />}
         {activeTab === "settings" && <SettingsTab />}
       </main>
     </div>

@@ -4,6 +4,9 @@ import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/Stat
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { toast } from "sonner";
+import { AlertTriangle } from "lucide-react";
+import { currentCompany } from "../ManagerPanel";
+import { apiFetch } from "../../../utils/api";
 
 // Fetch'den dönecek olan Swagger yapısına uygun interface
 export interface ApiVehicleRegistration {
@@ -13,6 +16,51 @@ export interface ApiVehicleRegistration {
   type: string | null;
   capacity: number;
 }
+
+// --- GERÇEKÇİ RASTGELE VERİ ÜRETEÇLERİ ---
+export const generatePlate = () => {
+  const cities = ["01", "06", "07", "16", "34", "35", "41", "54"];
+  const letters = "ABCDEFGHJKLMNPRSTUVYZ";
+  const city = cities[Math.floor(Math.random() * cities.length)];
+  
+  // Format: 34 ABC 123
+  let mid = "";
+  const letterCount = Math.floor(Math.random() * 2) + 2; // 2 veya 3 harf
+  for(let i=0; i<letterCount; i++) mid += letters[Math.floor(Math.random() * letters.length)];
+  
+  const end = Math.floor(10 + Math.random() * 899); // 2 veya 3 rakam
+  return `${city} ${mid} ${end}`;
+};
+
+export const generateFutureDate = (monthsAhead = 6) => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + monthsAhead + Math.floor(Math.random() * 12));
+  return d.toISOString().split('T')[0];
+};
+
+export const generateRegNo = () => {
+  const letters = "ABCDEFGHIJKLMNOPRSTUVYZ";
+  const l1 = letters[Math.floor(Math.random() * letters.length)];
+  const l2 = letters[Math.floor(Math.random() * letters.length)];
+  const num = Math.floor(100000 + Math.random() * 899999);
+  return `${l1}${l2}${num}`;
+};
+
+export const generateTCNo = () => {
+  let digits = [];
+  digits[0] = Math.floor(Math.random() * 9) + 1;
+  for (let i = 1; i < 9; i++) digits[i] = Math.floor(Math.random() * 10);
+  let oddSum = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  let evenSum = digits[1] + digits[3] + digits[5] + digits[7];
+  digits[9] = (oddSum * 7 - evenSum) % 10;
+  let totalSum = 0;
+  for (let i = 0; i < 10; i++) totalSum += digits[i];
+  digits[10] = totalSum % 10;
+  return digits.join("");
+};
+
+export const generateLicenseNo = () => Math.floor(100000 + Math.random() * 899999).toString();
+// ------------------------------------------
 
 export interface ApiVehicle {
   id?: number;
@@ -32,6 +80,7 @@ export interface ApiVehicle {
   year?: number;
   vehicleType?: string | null;
   capacityKg?: number;
+  isRentedIntoCompany?: boolean;
 }
 
 export function VehiclesTab() {
@@ -39,6 +88,7 @@ export function VehiclesTab() {
   const [editItem, setEditItem] = useState<ApiVehicle | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiVehicle | null>(null);
+  const [returnItem, setReturnItem] = useState<ApiVehicle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Form objemizin state'inin varsayılan hali
@@ -56,7 +106,7 @@ export function VehiclesTab() {
     cascoEndDate: "",
     inspectionEndDate: "",
     nextMaintenanceKm: 0,
-    companyId: 1, 
+    companyId: currentCompany.id, 
     damageRecordAmount: 0,
   });
 
@@ -74,7 +124,40 @@ export function VehiclesTab() {
       
       const vehicles: ApiVehicle[] = await vRes.json();
       const regs: ApiVehicleRegistration[] = await rRes.json();
-      
+
+      let rentals: any[] = [];
+      try {
+        const rentRes = await apiFetch("/v1/rentals/my-rentals");
+        rentals = Array.isArray(rentRes) ? rentRes : (rentRes?.data || []);
+      } catch (err) {}
+
+      // Aktif seferleri çek
+      let activeTrips: any[] = [];
+      try {
+        const tripRes = await apiFetch(`/Trips/active/${currentCompany.id}`);
+        activeTrips = Array.isArray(tripRes) ? tripRes : [];
+      } catch (err) {}
+
+      // Seferdeki araçların plakalarını topla
+      const onTripPlates = new Set(
+        activeTrips.map((t: any) => t.vehiclePlate).filter(Boolean)
+      );
+
+      // Aktif kiralamalar: iade edilmemiş olanlar
+      // Kiralayan olarak aldığımız araçların plakaları
+      const rentedInPlates = new Set(
+        rentals
+          .filter((r: any) => r.renterCompanyId === currentCompany.id && !r.returnDate)
+          .map((r: any) => r.vehiclePlate)
+      );
+
+      // Kendi araçlarımızdan başka şirkete kiraya verilmiş olanları bul
+      const rentedOutPlates = new Set(
+        rentals
+          .filter((r: any) => r.renterCompanyId !== currentCompany.id && !r.returnDate)
+          .map((r: any) => r.vehiclePlate)
+      );
+
       // Merge vehicle data with registration data
       const merged = vehicles.map(v => {
         const r = regs.find(reg => reg.registrationNumber === v.registrationNumber);
@@ -86,8 +169,26 @@ export function VehiclesTab() {
           capacityKg: r?.capacity
         };
       });
-      
-      setData(merged);
+
+      // Kendi araçlarımız + aktif kiralama ile aldığımız dış araçlar
+      const companyVehicles = merged
+        .filter(v => v.companyId === currentCompany.id || rentedInPlates.has(v.plate))
+        .map(v => {
+          // Seferdeki araç
+          if (onTripPlates.has(v.plate)) {
+            return { ...v, isOnTrip: true };
+          }
+          // Dışarıdan kiraladığımız araç (farklı şirketin aracı, bize kiralık gelmiş)
+          if (v.companyId !== currentCompany.id && rentedInPlates.has(v.plate)) {
+            return { ...v, isRentedIntoCompany: true };
+          }
+          // Kendi aracımız ama başka bir şirket tarafından kiralanmış
+          if (v.companyId === currentCompany.id && rentedOutPlates.has(v.plate)) {
+            return { ...v, isRentedOut: true };
+          }
+          return v;
+        });
+      setData(companyVehicles);
     } catch (e: any) {
       toast.error(e.message || "Bir hata oluştu");
     } finally {
@@ -108,12 +209,26 @@ export function VehiclesTab() {
   }, []);
 
   const openAdd = () => {
-    setForm(getInitialForm());
+    setForm({
+      ...getInitialForm(),
+      plate: generatePlate(),
+      registrationNumber: generateRegNo(),
+      year: 2020 + Math.floor(Math.random() * 6),
+      baseRentPrice: 1500 + Math.floor(Math.random() * 3000),
+      currentKm: Math.floor(Math.random() * 100000),
+      insuranceEndDate: generateFutureDate(6),
+      cascoEndDate: generateFutureDate(8),
+      inspectionEndDate: generateFutureDate(12),
+    });
     setEditItem(null);
     setShowForm(true);
   };
 
   const openEdit = (item: ApiVehicle) => {
+    if (item.isRentedIntoCompany) {
+      toast.info("Kiraladığınız dış araçların bilgilerini düzenleyemezsiniz.");
+      return;
+    }
     setForm({
       ...item,
       insuranceEndDate: item.insuranceEndDate ? item.insuranceEndDate.split('T')[0] : "",
@@ -139,13 +254,13 @@ export function VehiclesTab() {
     };
 
     const vehiclePayload = {
-      plate: form.plate,
-      registrationNumber: form.registrationNumber,
+      plate: editItem ? editItem.plate : form.plate,
+      registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm),
       baseRentPrice: Number(form.baseRentPrice),
       nextMaintenanceKm: Number(form.nextMaintenanceKm),
       damageRecordAmount: Number(form.damageRecordAmount),
-      companyId: 1,
+      companyId: currentCompany.id,
       isActive: form.isActive,
       insuranceEndDate: form.insuranceEndDate ? new Date(form.insuranceEndDate).toISOString() : null,
       cascoEndDate: form.cascoEndDate ? new Date(form.cascoEndDate).toISOString() : null,
@@ -157,20 +272,36 @@ export function VehiclesTab() {
       const regMethod = editItem ? "PUT" : "POST";
       const regEndpoint = editItem ? `/api/v1/vehicle-registrations/${encodeURIComponent(editItem.registrationNumber || "")}` : "/api/v1/vehicle-registrations";
       
-      await fetch(regEndpoint, {
+      const rRes = await fetch(regEndpoint, {
         method: regMethod,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(regPayload)
       });
       
+      if (!rRes.ok && !editItem) {
+          // Eğer yeni araç ekliyorsak ve ruhsat kaydı başarısızsa dur
+          const rErr = await rRes.text();
+          throw new Error("Ruhsat kaydı oluşturulamadı: " + rErr);
+      }
+      
       // 2. Araç Güncelle / Ekle
       const vMethod = editItem ? "PUT" : "POST";
       const vEndpoint = editItem ? `/api/v1/vehicles/${encodeURIComponent(editItem.plate)}` : `/api/v1/vehicles`;
 
+      // Tarih zorunluluğu fix: Backend DateTime beklediği için boş bırakılamaz
+      const fallbackDate = new Date().toISOString();
+
+      const finalVehiclePayload = {
+          ...vehiclePayload,
+          insuranceEndDate: vehiclePayload.insuranceEndDate || fallbackDate,
+          cascoEndDate: vehiclePayload.cascoEndDate || fallbackDate,
+          inspectionEndDate: vehiclePayload.inspectionEndDate || fallbackDate,
+      };
+
       const vRes = await fetch(vEndpoint, {
         method: vMethod,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(vehiclePayload),
+        body: JSON.stringify(finalVehiclePayload),
       });
 
       if (!vRes.ok) {
@@ -189,13 +320,81 @@ export function VehiclesTab() {
   const handleDelete = async () => {
     if (!deleteItem || !deleteItem.plate) return;
     try {
-      const res = await fetch(`/api/v1/vehicles/${deleteItem.plate}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error("Silme işlemi başarısız");
-      toast.success("Araç silindi");
+      const res = await fetch(`/api/v1/vehicles/${encodeURIComponent(deleteItem.plate)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        // Eğer backend silmeye izin vermiyorsa (Geçmiş kiralama/sefer bağlantısı varsa), aracı pasif duruma çekelim
+        toast.info("Araç geçmiş işlemlere sahip olduğu için tamamen silinemedi. 'Pasif' duruma alınıyor...");
+        
+        // Aracı pasif yapmak için PUT isteği atıyoruz
+        const passivePayload = {
+          ...deleteItem,
+          isActive: false
+        };
+        const putRes = await fetch(`/api/v1/vehicles/${encodeURIComponent(deleteItem.plate)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(passivePayload)
+        });
+
+        if (!putRes.ok) throw new Error("Aracı pasif duruma alma işlemi de başarısız oldu.");
+        toast.success("Araç başarıyla pasif duruma alındı.");
+      } else {
+        toast.success("Araç tamamen silindi.");
+      }
+
       setDeleteItem(null);
       fetchVehicles();
     } catch (e: any) {
       toast.error(e.message || "Hata oluştu");
+    }
+  };
+
+  const handleQuickReturn = async () => {
+    if (!returnItem) return;
+    try {
+      // 1. Önce aktif kiralamayı bul
+      const rentals = await apiFetch("/v1/rentals/my-rentals");
+      const activeRental = (Array.isArray(rentals) ? rentals : (rentals?.data || []))
+        .find((r: any) => r.vehiclePlate === returnItem.plate && !r.returnDate);
+
+      if (!activeRental) {
+        toast.error("Aktif kiralama kaydı bulunamadı.");
+        setReturnItem(null);
+        return;
+      }
+
+      // 2. Kiralamayı iade et
+      await apiFetch(`/v1/rentals/${activeRental.id || activeRental.rentalId}/return`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          returnDate: new Date().toISOString(),
+          returnKm: returnItem.currentKm || 0
+        })
+      });
+
+      // 3. Bağlantı Sıkıntısı Fix: Aktif seferi kapat
+      try {
+        const ownerId = returnItem.companyId; // returnItem bir Araç (ApiVehicle) nesnesi olduğu için companyId direkt alınabilir
+        const activeTripsRes = await apiFetch(`/Trips/active/${ownerId || currentCompany.id}`);
+        const activeTrips = Array.isArray(activeTripsRes) ? activeTripsRes : [];
+        const tripToComplete = activeTrips.find((t: any) => t.vehiclePlate === returnItem.plate);
+        
+        if (tripToComplete) {
+          await apiFetch(`/Trips/${tripToComplete.id || tripToComplete.tripId}/complete`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              endTime: new Date().toISOString(),
+              endKm: returnItem.currentKm || 0
+            })
+          });
+        }
+      } catch (err) {}
+
+      toast.success("Araç iade edildi ve listeden kaldırıldı.");
+      setReturnItem(null);
+      fetchVehicles();
+    } catch (e: any) {
+      toast.error("Hızlı iade başarısız: " + e.message);
     }
   };
 
@@ -205,13 +404,28 @@ export function VehiclesTab() {
   };
 
   const columns: Column<ApiVehicle>[] = [
-    { key: "plate", header: "Plaka", render: (v) => <span className="text-foreground">{v.plate}</span> },
+    { key: "plate", header: "Plaka", render: (v) => (
+      <div className="flex items-center gap-2">
+        <span className="text-foreground">{v.plate}</span>
+        {v.nextMaintenanceKm && v.currentKm !== undefined && (v.nextMaintenanceKm - v.currentKm <= 500) && (
+          <div title={`Bakım yaklaştı! Kalan KM: ${Math.max(0, v.nextMaintenanceKm - v.currentKm)}`}>
+            <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+    ) },
     { key: "brandModel", header: "Marka / Model", render: (v) => v.brandModel || "—" },
     { key: "year", header: "Yıl", render: (v) => v.year || "—" },
     { key: "registration", header: "Ruhsat No", render: (v) => v.registrationNumber || "—" },
     { key: "currentKm", header: "Anlık KM", render: (v) => v.currentKm ? `${v.currentKm} km` : "0" },
     { key: "baseRent", header: "Günlük Kira", render: (v) => v.baseRentPrice ? `₺${v.baseRentPrice}` : "0" },
-    { key: "status", header: "Durum", render: (v) => <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "neutral"} /> },
+    { key: "status", header: "Durum", render: (v) => {
+        if ((v as any).isOnTrip) return <StatusBadge label="Seferde" variant="info" />;
+        if (v.isRentedIntoCompany) return <StatusBadge label="Kiralık" variant="info" />;
+        if ((v as any).isRentedOut) return <StatusBadge label="Kiraya Verdik" variant="warning" />;
+        return <StatusBadge label={v.isActive ? "Aktif" : "Pasif"} variant={v.isActive ? "success" : "danger"} />;
+      }
+    },
   ];
 
   const canAddVehicle = permissions.length === 0 || permissions.includes("arac:ekle");
@@ -229,13 +443,35 @@ export function VehiclesTab() {
         onAdd={canAddVehicle ? openAdd : undefined} 
         addLabel="Araç Ekle" 
         onEdit={canEditVehicle ? openEdit : undefined} 
-        onDelete={canDeleteVehicle ? (v) => setDeleteItem(v) : undefined} 
+        onDelete={canDeleteVehicle ? (v) => {
+          if (v.isRentedIntoCompany) {
+             setReturnItem(v);
+             return;
+          }
+          setDeleteItem(v);
+        } : undefined} 
+      />
+
+      {/* İade Et Onay Dialogu (Hızlı İade) */}
+      <ConfirmDialog
+        open={!!returnItem}
+        onClose={() => setReturnItem(null)}
+        onConfirm={handleQuickReturn}
+        title="Aracı İade Et"
+        message={
+          <div className="space-y-4">
+            <p><strong>{returnItem?.plate}</strong> plakalı kiralık aracı şimdi iade etmek istiyor musunuz?</p>
+            <div className="text-sm bg-muted rounded-md p-3">
+              <p>Araç şu anki konumuyla ve kilometresiyle ({returnItem?.currentKm} km) iade edilecektir.</p>
+            </div>
+          </div>
+        }
       />
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Araç Düzenle" : "Yeni Araç"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} /></Field>
+          <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Marka / Model *"><Input value={form.brandModel || ""} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></Field>
-          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} /></Field>
+          <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Yıl"><Input type="number" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></Field>
           
           <Field label="Tip">
