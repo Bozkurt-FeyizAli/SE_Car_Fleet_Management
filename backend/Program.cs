@@ -10,6 +10,7 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
 
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IVehicleService, VehicleService>();
@@ -21,6 +22,7 @@ builder.Services.AddScoped<IVehicleRegistrationService, VehicleRegistrationServi
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
+builder.Services.AddScoped<ILicenseService, LicenseService>();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
@@ -45,6 +47,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<Backend.Hubs.FleetHub>("/fleetHub");
 
 app.Run();
 
