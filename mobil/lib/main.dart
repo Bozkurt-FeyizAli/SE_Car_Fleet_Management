@@ -11,7 +11,7 @@ void main() {
   //   import 'services/mock_auth_service.dart';
   //   final authService = MockAuthService();
   // =========================================================
-  final authService = ApiAuthService(baseUrl: 'http://161.35.194.242');
+  final authService = ApiAuthService(baseUrl: 'http://mikbalceyhan.me');
 
   runApp(MyApp(authService: authService));
 }

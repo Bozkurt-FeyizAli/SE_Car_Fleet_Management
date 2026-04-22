@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import 'admin_home_screen.dart';
 import 'company_home_screen.dart';
 import 'driver_home_screen.dart';
+import 'unknown_role_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final AuthService authService;
@@ -74,10 +75,39 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      final user = await widget.authService.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+      UserModel user;
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+
+      if (email == 'sysadmin' && password == 'sysadmin') {
+        user = const UserModel(
+          id: '999',
+          name: 'Sistem Yöneticisi (Mock)',
+          email: 'sysadmin',
+          role: UserRole.superAdmin,
+          token: 'mock_token_admin',
+        );
+      } else if (email == 'sirket' && password == 'sirket') {
+        user = const UserModel(
+          id: '998',
+          name: 'Şirket Yöneticisi (Mock)',
+          email: 'sirket',
+          role: UserRole.company,
+          companyId: 1,
+          token: 'mock_token_company',
+        );
+      } else if (email == 'sofor' && password == 'sofor') {
+        user = const UserModel(
+          id: '997',
+          name: 'Şoför (Mock)',
+          email: 'sofor',
+          role: UserRole.driver,
+          companyId: 1,
+          token: 'mock_token_driver',
+        );
+      } else {
+        user = await widget.authService.login(email, password);
+      }
 
       if (!mounted) return;
 
@@ -100,6 +130,9 @@ class _LoginScreenState extends State<LoginScreen>
             user: user,
             authService: widget.authService,
           );
+          break;
+        case UserRole.unknown:
+          targetScreen = UnknownRoleScreen(authService: widget.authService);
           break;
       }
 
@@ -262,7 +295,10 @@ class _LoginScreenState extends State<LoginScreen>
       decoration: _inputDecoration(hintText: 'superadmin@mail.com'),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
-          return 'E-posta adresi gerekli';
+          return 'E-posta adresi veya kullanıcı adı gerekli';
+        }
+        if (value.trim() == 'sysadmin' || value.trim() == 'sirket' || value.trim() == 'sofor') {
+          return null; // Mock girişe izin ver
         }
         if (!value.contains('@')) {
           return 'Geçerli bir e-posta adresi girin';

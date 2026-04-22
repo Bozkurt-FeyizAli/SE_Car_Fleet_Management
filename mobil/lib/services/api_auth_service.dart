@@ -6,7 +6,7 @@ import 'token_storage_service.dart';
 
 /// Gerçek backend ile JWT tabanlı kimlik doğrulama servisi.
 class ApiAuthService implements AuthService {
-  String baseUrl = "http://161.35.194.242";
+  String baseUrl = "http://mikbalceyhan.me";
   final TokenStorageService _tokenStorage;
   final http.Client _httpClient;
 
