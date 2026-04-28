@@ -143,18 +143,26 @@ export function VehiclesTab() {
         activeTrips.map((t: any) => t.vehiclePlate).filter(Boolean)
       );
 
-      // Aktif kiralamalar: iade edilmemiş olanlar
+      // Onaylanmış ve iade edilmemiş kiralamalar — sadece status: "Approved"
       // Kiralayan olarak aldığımız araçların plakaları
       const rentedInPlates = new Set(
         rentals
-          .filter((r: any) => r.renterCompanyId === currentCompany.id && !r.returnDate)
+          .filter((r: any) =>
+            r.renterCompanyId === currentCompany.id &&
+            !r.returnDate &&
+            (r.status === "Approved" || r.status === "approved")
+          )
           .map((r: any) => r.vehiclePlate)
       );
 
-      // Kendi araçlarımızdan başka şirkete kiraya verilmiş olanları bul
+      // Kendi araçlarımızdan başka şirkete ONAYLANMIŞ kiraya verilmiş olanları bul
       const rentedOutPlates = new Set(
         rentals
-          .filter((r: any) => r.renterCompanyId !== currentCompany.id && !r.returnDate)
+          .filter((r: any) =>
+            r.renterCompanyId !== currentCompany.id &&
+            !r.returnDate &&
+            (r.status === "Approved" || r.status === "approved")
+          )
           .map((r: any) => r.vehiclePlate)
       );
 
@@ -229,8 +237,12 @@ export function VehiclesTab() {
       toast.info("Kiraladığınız dış araçların bilgilerini düzenleyemezsiniz.");
       return;
     }
+    const remainingKm = item.nextMaintenanceKm && item.currentKm
+      ? Math.max(0, item.nextMaintenanceKm - item.currentKm)
+      : (item.nextMaintenanceKm || 0);
     setForm({
       ...item,
+      nextMaintenanceKm: remainingKm,
       insuranceEndDate: item.insuranceEndDate ? item.insuranceEndDate.split('T')[0] : "",
       cascoEndDate: item.cascoEndDate ? item.cascoEndDate.split('T')[0] : "",
       inspectionEndDate: item.inspectionEndDate ? item.inspectionEndDate.split('T')[0] : "",
@@ -258,7 +270,7 @@ export function VehiclesTab() {
       registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm),
       baseRentPrice: Number(form.baseRentPrice),
-      nextMaintenanceKm: Number(form.nextMaintenanceKm),
+      nextMaintenanceKm: Number(form.currentKm) + Number(form.nextMaintenanceKm),
       damageRecordAmount: Number(form.damageRecordAmount),
       companyId: currentCompany.id,
       isActive: form.isActive,
@@ -407,10 +419,15 @@ export function VehiclesTab() {
     { key: "plate", header: "Plaka", render: (v) => (
       <div className="flex items-center gap-2">
         <span className="text-foreground">{v.plate}</span>
-        {v.nextMaintenanceKm && v.currentKm !== undefined && (v.nextMaintenanceKm - v.currentKm <= 500) && (
-          <div title={`Bakım yaklaştı! Kalan KM: ${Math.max(0, v.nextMaintenanceKm - v.currentKm)}`}>
-            <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
-          </div>
+        {v.nextMaintenanceKm && v.currentKm !== undefined && (
+          (() => {
+            const remaining = Math.max(0, v.nextMaintenanceKm - v.currentKm);
+            return remaining <= 500 ? (
+              <div title={`Bakım yaklaştı! Kalan KM: ${remaining}`}>
+                <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
+              </div>
+            ) : null;
+          })()
         )}
       </div>
     ) },
@@ -488,7 +505,7 @@ export function VehiclesTab() {
           <Field label="Hasar Kaydı Tutarı (TL)"><Input type="number" value={form.damageRecordAmount} onChange={e => setForm({ ...form, damageRecordAmount: Number(e.target.value) })} /></Field>
           
           <Field label="Taban Fiyat (TL)"><Input type="number" value={form.baseRentPrice} onChange={e => setForm({ ...form, baseRentPrice: Number(e.target.value) })} /></Field>
-          <Field label="Sonraki Bakım KM"><Input type="number" value={form.nextMaintenanceKm} onChange={e => setForm({ ...form, nextMaintenanceKm: Number(e.target.value) })} /></Field>
+          <Field label="Bakıma Kalan KM"><Input type="number" placeholder="Örn: 5000" value={form.nextMaintenanceKm} onChange={e => setForm({ ...form, nextMaintenanceKm: Number(e.target.value) })} /></Field>
           
           <Field label="Durum (Aktif/Pasif)">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.isActive ? "true" : "false"} onChange={e => setForm({ ...form, isActive: e.target.value === "true" })}>

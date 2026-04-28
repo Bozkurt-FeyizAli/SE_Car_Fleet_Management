@@ -33,6 +33,7 @@ import { ApiUser } from "../../manager/tabs/DriversTab";
 
 export function UsersTab() {
   const [data, setData] = useState<ApiUser[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [editItem, setEditItem] = useState<ApiUser | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
@@ -62,9 +63,10 @@ export function UsersTab() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const [usersRes, managersRes] = await Promise.all([
+      const [usersRes, managersRes, companiesRes] = await Promise.all([
         fetch("/api/User"),
-        fetch("/api/v1/managers").catch(() => null)
+        fetch("/api/v1/managers").catch(() => null),
+        fetch("/api/v1/companies").catch(() => null)
       ]);
       
       if (!usersRes.ok) throw new Error("Kullanıcılar yüklenemedi");
@@ -81,6 +83,13 @@ export function UsersTab() {
                });
             }
          } catch(e) {}
+      }
+
+      if (companiesRes && companiesRes.ok) {
+        try {
+          const cList = await companiesRes.json();
+          setCompanies(Array.isArray(cList) ? cList : []);
+        } catch(e) {}
       }
       
       const mergedUsers = usersList.map((u: any) => {
@@ -326,7 +335,13 @@ export function UsersTab() {
     },
     { key: "status", header: "Durum", render: (u) => {
         const status = u.driverTripStatus || "active";
-        return <StatusBadge label={status === "active" ? "Aktif" : "Pasif"} variant={status === "active" ? "success" : "neutral"} />;
+        if (status === "Idle" || status === "active" || status === "Boşta") {
+          return <StatusBadge label="Aktif" variant="success" />;
+        }
+        if (status === "InTrip" || status === "on_trip" || status === "Seferde") {
+          return <StatusBadge label="Seferde" variant="info" />;
+        }
+        return <StatusBadge label="Pasif" variant="neutral" />;
       }
     },
   ];
@@ -366,7 +381,6 @@ export function UsersTab() {
               <Field label="Ofis/Oda No"><Input value={form.officeNumber || ""} onChange={e => setForm({ ...form, officeNumber: e.target.value })} placeholder="Örn: 201" /></Field>
             </>
           )}
-          
           <Field label="Rol">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.roleId ?? 1} onChange={e => setForm({ ...form, roleId: Number(e.target.value) })}>
               <option value="0">Süper Admin</option>
@@ -374,7 +388,20 @@ export function UsersTab() {
               <option value="2">Sürücü</option>
             </select>
           </Field>
-          <Field label="Şirket ID"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
+          {Number(form.roleId) !== 0 && (
+            <Field label="Şirket">
+              <select 
+                className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+                value={form.companyId || ""} 
+                onChange={e => setForm({ ...form, companyId: Number(e.target.value) })}
+              >
+                <option value="">Şirket Seçiniz...</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.companyName || c.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
           
           {Number(form.roleId) === 2 && (() => {
             const availableManagers = data.filter(u => {

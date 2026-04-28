@@ -343,19 +343,45 @@ export function LocationsTab() {
         searchPlaceholder="Konum ara..." 
         searchKeys={["locationName"]} 
         onAdd={() => { setEditItem(null); setForm({ locationName: "", city: "", district: "", fullAddress: "" }); setShowForm(true); }} 
-        onEdit={(d) => {
+        onEdit={async (d) => {
            setEditItem(d);
            setSelectedLat(d.latitude);
            setSelectedLng(d.longitude);
            setMapCenter([d.latitude, d.longitude]);
+
+           // Önce kayıtlı veriyi doldur
+           const storedCity = d.address?.city || d.city || "";
+           const storedDistrict = d.address?.district || d.district || "";
+
            setForm({
              locationName: d.locationName,
-             city: d.address?.city || d.city || "",
-             district: d.address?.district || d.district || "",
+             city: storedCity,
+             district: storedDistrict,
              fullAddress: d.address?.fullAddress || d.fullAddress || ""
            });
            setShowForm(true);
+
+           // Şehir/ilçe boşsa koordinattan reverse geocode ile doldur
+           if (!storedCity || !storedDistrict) {
+             try {
+               const res = await fetch(
+                 `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${d.latitude}&lon=${d.longitude}`,
+                 { headers: { 'Accept-Language': 'tr' } }
+               );
+               const geo = await res.json();
+               const cityStr = geo.address?.province || geo.address?.city || geo.address?.state || storedCity;
+               const distStr = geo.address?.town || geo.address?.suburb || geo.address?.village || geo.address?.city_district || storedDistrict;
+               setForm(prev => ({
+                 ...prev,
+                 city: prev.city || cityStr,
+                 district: prev.district || distStr,
+               }));
+             } catch (err) {
+               console.error("Reverse geocode hatası:", err);
+             }
+           }
         }}
+
         addLabel="Yeni Konum (Manuel)" 
       />
 
