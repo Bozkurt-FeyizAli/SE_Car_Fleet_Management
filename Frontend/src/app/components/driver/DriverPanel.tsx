@@ -21,7 +21,6 @@ const tabs = [
   { id: "company", label: "Şirket", icon: Building2 },
   { id: "vehicle", label: "Araç", icon: Car },
   { id: "trips", label: "Seferler", icon: MapPin },
-  { id: "department", label: "Departman", icon: Users },
   { id: "quick", label: "Hızlı", icon: Zap },
   { id: "accident", label: "Kaza", icon: AlertTriangle },
   { id: "settings", label: "Ayarlar", icon: Settings },
@@ -35,24 +34,48 @@ export function DriverPanel() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Giriş verilerini al
+    const fetchData = async (email: string) => {
+      try {
+        const [usersRes, driversRes] = await Promise.all([
+          fetch("/api/User"),
+          fetch("/api/Drivers")
+        ]);
+
+        if (usersRes.ok && driversRes.ok) {
+          const usersList: any[] = await usersRes.json();
+          const driversList: any[] = await driversRes.json();
+
+          const userMatch = usersList.find(u => u.email === email);
+          if (userMatch) {
+            const driverMatch = driversList.find(d => d.userId === userMatch.id);
+            const merged = {
+              ...userMatch,
+              driverId: driverMatch?.id,
+              driverLicenseId: driverMatch?.licenseNumber || userMatch.driverLicenseId,
+              driverScore: driverMatch?.points ?? userMatch.driverScore,
+              assignedVehiclePlate: driverMatch?.vehiclePlate || userMatch.assignedVehiclePlate,
+              driverTripStatus: driverMatch?.status || userMatch.driverTripStatus,
+              parentManagerId: userMatch.parentManagerId || userMatch.parentUserId
+            };
+            setFullUserRecord(merged);
+          }
+        }
+      } catch (err) {
+        console.error("Could not fetch full user details:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
       setUserData(parsedUser);
-      
-      // Fetch full details from live API to display in ProfileTab
-      fetch("/api/User")
-        .then(res => res.json())
-        .then((users: ApiUser[]) => {
-          const match = users.find(u => u.email === parsedUser.email);
-          if (match) {
-            setFullUserRecord(match);
-          }
-        })
-        .catch(err => console.error("Could not fetch full user details:", err))
-        .finally(() => setIsLoading(false));
+      fetchData(parsedUser.email);
 
+      // Anlık güncelleme için 15 saniyede bir yenile
+      const interval = setInterval(() => fetchData(parsedUser.email), 15000);
+      return () => clearInterval(interval);
     } else {
       navigate('/');
     }
@@ -109,9 +132,8 @@ export function DriverPanel() {
       <main className="p-4 sm:p-8">
         {activeTab === "profile" && <ProfileTab user={fullUserRecord} />}
         {activeTab === "company" && <CompanyTab user={fullUserRecord} />}
-        {activeTab === "vehicle" && <VehicleTab />}
+        {activeTab === "vehicle" && <VehicleTab user={fullUserRecord} />}
         {activeTab === "trips" && <TripsTab />}
-        {activeTab === "department" && <DepartmentTab />}
         {activeTab === "quick" && <QuickActionsTab />}
         {activeTab === "accident" && <AccidentReportTab user={fullUserRecord} />}
         {activeTab === "settings" && <SettingsTab />}

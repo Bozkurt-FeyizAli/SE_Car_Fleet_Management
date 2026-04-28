@@ -14,8 +14,27 @@ export function ProfileTab({ user }: ProfileTabProps) {
   const firstName = user.firstName || "Bilinmiyor";
   const lastName = user.lastName || "";
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-  const driverScore = user.driverScore ?? 0;
-  const statusLabel = user.driverTripStatus === "active" ? "Aktif" : user.driverTripStatus === "on_trip" ? "Seferde" : "Pasif";
+  // Durum etiketini ve rengini belirle
+  const getStatusInfo = (status: string | null | undefined) => {
+    const s = (status || "").toLowerCase().trim();
+
+    if (s === "intrip" || s === "in_trip" || s === "seferde") {
+      return { label: "Seferde 📦", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300" };
+    }
+    if (s === "preparing") {
+      return { label: "Hazırlanıyor ⏳", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" };
+    }
+    if (s === "idle" || s === "boşta" || s === "active" || s === "") {
+      return { label: "Boşta ✅", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" };
+    }
+    if (s === "passive" || s === "pasif" || s === "inactive") {
+      return { label: "Pasif", color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" };
+    }
+    // Tanınmayan bir status varsa boşta say
+    return { label: "Boşta", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" };
+  };
+
+  const statusInfo = getStatusInfo(user.driverTripStatus);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -29,10 +48,10 @@ export function ProfileTab({ user }: ProfileTabProps) {
           <p className="text-muted-foreground">Sürücü ID: {user.id}</p>
           <div className="flex flex-wrap justify-center md:justify-start gap-2 mt-3">
             <span className="bg-emerald-100 text-emerald-800 text-xs px-3 py-1.5 rounded-full font-medium">
-              Sürücü Skoru: {driverScore}
+              Sürücü Skoru: {user.driverScore ?? 0}
             </span>
-            <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1.5 rounded-full font-medium">
-              {statusLabel}
+            <span className={`${statusInfo.color} text-xs px-3 py-1.5 rounded-full font-medium`}>
+              {statusInfo.label}
             </span>
             {user.assignedVehiclePlate && (
               <span className="bg-slate-100 text-slate-800 text-xs px-3 py-1.5 rounded-full font-medium">

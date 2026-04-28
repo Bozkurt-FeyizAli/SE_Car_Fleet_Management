@@ -36,11 +36,44 @@ export interface ApiVehicle {
   capacityKg?: number;
 }
 
+// --- GERÇEKÇİ RASTGELE VERİ ÜRETEÇLERİ ---
+export const generatePlate = () => {
+  const cities = ["01", "06", "07", "16", "34", "35", "41", "54", "61"];
+  const letters = "ABCDEFGHJKLMNPRSTUVYZ";
+  const city = cities[Math.floor(Math.random() * cities.length)];
+  let mid = "";
+  const letterCount = Math.floor(Math.random() * 2) + 2;
+  for(let i=0; i<letterCount; i++) mid += letters[Math.floor(Math.random() * letters.length)];
+  const end = Math.floor(10 + Math.random() * 899);
+  return `${city} ${mid} ${end}`;
+};
+
+export const generateRegNo = () => {
+  const letters = "ABCDEFGHIJKLMNOPRSTUVYZ";
+  const l1 = letters[Math.floor(Math.random() * letters.length)];
+  const l2 = letters[Math.floor(Math.random() * letters.length)];
+  const num = Math.floor(100000 + Math.random() * 899999);
+  return `${l1}${l2}${num}`;
+};
+
+export const generateBrandModel = () => {
+  const models = ["Ford Transit", "Mercedes Sprinter", "Volkswagen Crafter", "Renault Master", "Iveco Daily", "Fiat Ducato", "Isuzu NPR", "Scania R450", "Volvo FH16"];
+  return models[Math.floor(Math.random() * models.length)];
+};
+
+export const generateFutureDate = (monthsAhead = 6) => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + monthsAhead + Math.floor(Math.random() * 12));
+  return d.toISOString().split('T')[0];
+};
+// ------------------------------------------
+
 export function VehiclesTab() {
   const [data, setData] = useState<ApiVehicle[]>([]);
   const [editItem, setEditItem] = useState<ApiVehicle | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiVehicle | null>(null);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Form objemizin state'inin varsayılan hali
@@ -67,15 +100,23 @@ export function VehiclesTab() {
   const fetchVehicles = async () => {
     setIsLoading(true);
     try {
-      const [vRes, rRes] = await Promise.all([
+      const [vRes, rRes, cRes] = await Promise.all([
         fetch("/api/v1/vehicles"),
-        fetch("/api/v1/vehicle-registrations")
+        fetch("/api/v1/vehicle-registrations"),
+        fetch("/api/v1/companies").catch(() => null)
       ]);
       
       if (!vRes.ok || !rRes.ok) throw new Error("Veriler yüklenemedi");
       
       const vehicles: ApiVehicle[] = await vRes.json();
       const regs: ApiVehicleRegistration[] = await rRes.json();
+      
+      if (cRes && cRes.ok) {
+        try {
+          const cList = await cRes.json();
+          setCompanies(Array.isArray(cList) ? cList : []);
+        } catch(e) {}
+      }
 
       // Aktif kiralamaları çek (iade edilmemiş)
       let rentedPlates = new Set<string>();
@@ -126,14 +167,29 @@ export function VehiclesTab() {
   }, []);
 
   const openAdd = () => {
-    setForm(getInitialForm());
+    setForm({
+      ...getInitialForm(),
+      plate: generatePlate(),
+      registrationNumber: generateRegNo(),
+      brandModel: generateBrandModel(),
+      year: 2018 + Math.floor(Math.random() * 7),
+      currentKm: Math.floor(Math.random() * 150000),
+      baseRentPrice: 1500 + Math.floor(Math.random() * 2500),
+      insuranceEndDate: generateFutureDate(6),
+      cascoEndDate: generateFutureDate(8),
+      inspectionEndDate: generateFutureDate(10),
+    });
     setEditItem(null);
     setShowForm(true);
   };
 
   const openEdit = (item: ApiVehicle) => {
+    const remainingKm = item.nextMaintenanceKm && item.currentKm
+      ? Math.max(0, item.nextMaintenanceKm - item.currentKm)
+      : (item.nextMaintenanceKm || 0);
     setForm({
       ...item,
+      nextMaintenanceKm: remainingKm,
       // Tarih formatlarını form inputlarına uygun hale getir (YYYY-MM-DD)
       insuranceEndDate: item.insuranceEndDate ? item.insuranceEndDate.split('T')[0] : "",
       cascoEndDate: item.cascoEndDate ? item.cascoEndDate.split('T')[0] : "",
@@ -163,7 +219,7 @@ export function VehiclesTab() {
       registrationNumber: editItem ? (editItem.registrationNumber || form.registrationNumber) : form.registrationNumber,
       currentKm: Number(form.currentKm || 0),
       baseRentPrice: Number(form.baseRentPrice),
-      nextMaintenanceKm: Number(form.nextMaintenanceKm),
+      nextMaintenanceKm: Number(form.currentKm || 0) + Number(form.nextMaintenanceKm),
       damageRecordAmount: Number(form.damageRecordAmount || 0),
       companyId: Number(form.companyId || 1),
       isActive: form.isActive,
@@ -229,6 +285,11 @@ export function VehiclesTab() {
     { key: "brandModel", header: "Marka / Model", render: (v) => v.brandModel || "—" },
     { key: "year", header: "Yıl", render: (v) => v.year },
     { key: "doc", header: "Ruhsat No", render: (v) => v.registrationNumber || "—" },
+    { key: "company", header: "Şirket", render: (v) => {
+        const c = companies.find(x => x.id === v.companyId);
+        return c ? (c.companyName || c.name) : (v.companyId || "—");
+      }
+    },
     { key: "kasko", header: "Kasko Bitiş", render: (v) => formatDate(v.cascoEndDate) },
     { key: "insurance", header: "Sigorta Bitiş", render: (v) => formatDate(v.insuranceEndDate) },
     { key: "status", header: "Durum", render: (v) => {
@@ -254,7 +315,18 @@ export function VehiclesTab() {
       />
       <FormDialog open={showForm} onClose={() => setShowForm(false)} title={editItem ? "Araç Düzenle" : "Yeni Araç"} onSubmit={handleSave} wide>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Şirket ID *"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
+          <Field label="Şirket *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={form.companyId || ""} 
+              onChange={e => setForm({ ...form, companyId: Number(e.target.value) })}
+            >
+              <option value="">Şirket Seçiniz...</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>{c.companyName || c.name}</option>
+              ))}
+            </select>
+          </Field>
           <Field label="Plaka *"><Input value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} disabled={!!editItem} /></Field>
           <Field label="Marka / Model *"><Input value={form.brandModel || ""} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></Field>
           <Field label="Ruhsat No"><Input value={form.registrationNumber || ""} onChange={e => setForm({ ...form, registrationNumber: e.target.value })} disabled={!!editItem} /></Field>
@@ -270,7 +342,7 @@ export function VehiclesTab() {
           </Field>
           <Field label="Kapasite (kg)"><Input type="number" value={form.capacityKg} onChange={e => setForm({ ...form, capacityKg: Number(e.target.value) })} /></Field>
           <Field label="Taban Fiyat (TL)"><Input type="number" value={form.baseRentPrice} onChange={e => setForm({ ...form, baseRentPrice: Number(e.target.value) })} /></Field>
-          <Field label="Sonraki Bakım KM"><Input type="number" value={form.nextMaintenanceKm} onChange={e => setForm({ ...form, nextMaintenanceKm: Number(e.target.value) })} /></Field>
+          <Field label="Bakıma Kalan KM"><Input type="number" placeholder="Örn: 5000" value={form.nextMaintenanceKm} onChange={e => setForm({ ...form, nextMaintenanceKm: Number(e.target.value) })} /></Field>
 
           <Field label="Durum (Aktif/Pasif)">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.isActive ? "true" : "false"} onChange={e => setForm({ ...form, isActive: e.target.value === "true" })}>
