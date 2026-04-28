@@ -17,6 +17,9 @@ namespace Backend.Models
         public int RenterCompanyId { get; set; }
 
         [Required]
+        public int RentedCompanyId { get; set; }
+
+        [Required]
         public DateTime StartDate { get; set; }
 
         [Required]
@@ -32,6 +35,10 @@ namespace Backend.Models
         public decimal? TotalPrice { get; set; }
 
         [Required]
+        [MaxLength(50)]
+        public string Status { get; set; } = "Pending";
+
+        [Required]
         public bool IsCompleted { get; set; } = false;
 
         [ForeignKey("VehiclePlate")]
@@ -39,5 +46,8 @@ namespace Backend.Models
 
         [ForeignKey("RenterCompanyId")]
         public Company RenterCompany { get; set; } = null!;
+
+        [ForeignKey("RentedCompanyId")]
+        public Company RentedCompany { get; set; } = null!;
     }
 }
