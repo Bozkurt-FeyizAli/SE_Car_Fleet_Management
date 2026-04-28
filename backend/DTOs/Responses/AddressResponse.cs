@@ -1,7 +1,8 @@
-namespace Backend.DTOs.Requests
+namespace Backend.DTOs.Responses
 {
-    public class AddressRequest
+    public class AddressResponse
     {
+        public int Id { get; set; }
         public string City { get; set; }
         public string District { get; set; }
         public string Neighborhood { get; set; }
