@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 enum UserRole {
-
   superAdmin,
   company,
-  driver;
+  driver,
+  unknown;
 
   /// String rol değerinden UserRole oluşturur (mock servis için).
   static UserRole fromString(String value) {
@@ -16,22 +16,22 @@ enum UserRole {
       case 'sofor':
         return UserRole.driver;
       default:
-        throw ArgumentError('Bilinmeyen rol: $value');
+        return UserRole.unknown;
     }
   }
 
-  /// Backend'den gelen roleId'den UserRole oluşturur.
-  /// roleId: 1 = superAdmin, 2 = company, 3 = driver
+  /// Backend'den gelen roleId'den (0 tabanlı enum) UserRole oluşturur.
+  /// roleId: 0 = superAdmin, 1 = company, 2 = driver
   static UserRole fromRoleId(int roleId) {
     switch (roleId) {
-      case 1:
+      case 0:
         return UserRole.superAdmin;
-      case 2:
+      case 1:
         return UserRole.company;
-      case 3:
+      case 2:
         return UserRole.driver;
       default:
-        throw ArgumentError('Bilinmeyen roleId: $roleId');
+        return UserRole.unknown;
     }
   }
 
@@ -43,17 +43,21 @@ enum UserRole {
         return 'company';
       case UserRole.driver:
         return 'driver';
+      case UserRole.unknown:
+        return 'unknown';
     }
   }
 
   int toRoleId() {
     switch (this) {
       case UserRole.superAdmin:
-        return 1;
+        return 0;
       case UserRole.company:
-        return 2;
+        return 1;
       case UserRole.driver:
-        return 3;
+        return 2;
+      case UserRole.unknown:
+        return -1;
     }
   }
 }
@@ -64,6 +68,7 @@ class UserModel {
   final String email;
   final UserRole role;
   final String? token;
+  final int? companyId;
 
   const UserModel({
     required this.id,
@@ -71,6 +76,7 @@ class UserModel {
     required this.email,
     required this.role,
     this.token,
+    this.companyId,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -81,6 +87,7 @@ class UserModel {
       email: json['email'] as String,
       role: UserRole.fromRoleId(roleId),
       token: json['token'] as String?,
+      companyId: (json['companyId'] as num?)?.toInt(),
     );
   }
 
@@ -95,39 +102,71 @@ class UserModel {
   ///   "roleId": 1
   /// }
   factory UserModel.fromApiResponse(Map<String, dynamic> json) {
-    int? roleId = (json['roleId'] as num?)?.toInt();
+    int? roleId;
     
-    // Eğer roleId API yanıtından gelmemişse (örn. eski sunucu versiyonu), JWT token'dan oku
+    // API yanıtında roleId int veya string dönebilir
+    final incomingRole = json['roleId'] ?? json['role'];
+    if (incomingRole != null) {
+      if (incomingRole is int) {
+        roleId = incomingRole;
+      } else {
+        roleId = int.tryParse(incomingRole.toString());
+      }
+    }
+
+    // JWT Token'dan claim okuma sırası
     if (roleId == null && json['token'] != null) {
       try {
         final tokenStr = json['token'] as String;
         final parts = tokenStr.split('.');
-        if (parts.length == 3) {
-          final payload = ascii.decode(base64.decode(base64.normalize(parts[1])));
+        if (parts.length >= 2) {
+          String normalized = base64.normalize(parts[1]);
+          final payload = ascii.decode(base64.decode(normalized));
           final payloadMap = jsonDecode(payload) as Map<String, dynamic>;
-          
-          // ClaimTypes.Role, genelde URL şeklinde gelir veya "role" olarak gelir
-          final roleClaim = payloadMap['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] 
-                            ?? payloadMap['role'];
-          
+
+          // Tüm olası role claim key'lerini kontrol et
+          var roleClaim = payloadMap['role'] ??
+              payloadMap['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ??
+              payloadMap['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role'];
+
           if (roleClaim != null) {
-            roleId = int.tryParse(roleClaim.toString());
+            if (roleClaim is int) {
+              roleId = roleClaim;
+            } else {
+              String rStr = roleClaim.toString().toLowerCase();
+              roleId = int.tryParse(rStr);
+              if (roleId == null) {
+                // Eğer int parse edilemediyse String olarak isimlendirilmiş olabilir
+                if (rStr.contains('admin') || rStr == '0') roleId = 0;
+                else if (rStr.contains('company') || rStr.contains('manager') || rStr == '1') roleId = 1;
+                else if (rStr.contains('driver') || rStr.contains('sofor') || rStr == '2' || rStr == '3') roleId = 2;
+              }
+            }
           }
         }
       } catch (e) {
         print('Token decode hatası: $e');
       }
     }
+
+    // Hala null ise gelen veriye göre bir isim araması da yapalım, son çare olarak 1 (Company) kullan
+    if (roleId == null && incomingRole != null) {
+      String rStr = incomingRole.toString().toLowerCase();
+      if (rStr.contains('admin') || rStr == '0') roleId = 0;
+      else if (rStr.contains('company') || rStr.contains('manager') || rStr == '1') roleId = 1;
+      else if (rStr.contains('driver') || rStr.contains('sofor') || rStr == '2' || rStr == '3') roleId = 2;
+    }
     
-    // Hala null ise varsayılan olarak şirket yöneticisi (2) yap
-    roleId ??= 2;
+    // Tüm denemelere rağmen boşsa bilinmeyen (unknown) rol ata (sayısal olarak -1)
+    roleId ??= -1;
 
     return UserModel(
       id: json['userId']?.toString() ?? json['id']?.toString() ?? '0',
       name: '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim(),
-      email: json['email'] as String,
+      email: json['email'] as String? ?? 'bilinmeyen@hesap.com',
       role: UserRole.fromRoleId(roleId),
       token: json['token'] as String?,
+      companyId: (json['companyId'] as num?)?.toInt(),
     );
   }
 
@@ -140,6 +179,7 @@ class UserModel {
       'email': email,
       'roleId': role.toRoleId(),
       if (token != null) 'token': token,
+      if (companyId != null) 'companyId': companyId,
     };
   }
 
@@ -151,6 +191,7 @@ class UserModel {
       email: email,
       role: role,
       token: newToken,
+      companyId: companyId,
     );
   }
 
@@ -162,6 +203,8 @@ class UserModel {
         return 'Şirket';
       case UserRole.driver:
         return 'Şoför';
+      case UserRole.unknown:
+        return 'Bilinmeyen Yetki';
     }
   }
 }

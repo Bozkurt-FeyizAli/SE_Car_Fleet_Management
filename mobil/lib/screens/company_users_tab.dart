@@ -5,7 +5,8 @@ import 'shared_styles.dart';
 // Company Yöneticiler tab — mirrors web manager/tabs/UsersTab.tsx
 // Shows roleId=2 users; full CRUD via /api/User
 class CompanyUsersTab extends StatefulWidget {
-  const CompanyUsersTab({super.key});
+  final int defaultCompanyId;
+  const CompanyUsersTab({super.key, this.defaultCompanyId = 1});
   @override
   State<CompanyUsersTab> createState() => _CompanyUsersTabState();
 }
@@ -30,7 +31,7 @@ class _CompanyUsersTabState extends State<CompanyUsersTab> {
       setState(() {
         _data = users
             .cast<Map<String, dynamic>>()
-            .where((u) => (u['roleId'] as num?)?.toInt() == 2)
+            .where((u) => (u['roleId'] as num?)?.toInt() == 1 || (u['role'] as num?)?.toInt() == 1)
             .toList();
         _loading = false;
       });
@@ -56,7 +57,7 @@ class _CompanyUsersTabState extends State<CompanyUsersTab> {
     final email = TextEditingController(text: item?['email'] ?? '');
     final phone = TextEditingController(text: item?['phone'] ?? '');
     final password = TextEditingController();
-    String status = item?['driverTripStatus'] ?? 'active';
+    final tcC = TextEditingController(text: item?['tcIdentityNumber'] ?? '');
 
     showModalBottomSheet(
       context: context,
@@ -76,33 +77,27 @@ class _CompanyUsersTabState extends State<CompanyUsersTab> {
             kField('E-posta *', email, type: TextInputType.emailAddress),
             kField('Şifre', password, obscure: !isEdit),
             kField('Telefon', phone, type: TextInputType.phone),
-            kLabel('Durum'),
-            kDropdown(status, ['active', 'inactive'],
-                ['Aktif', 'Pasif'],
-                (v) => setSt(() => status = v!)),
+            kField('T.C. Kimlik No *', tcC, type: TextInputType.number),
             const SizedBox(height: 14),
             Row(children: [
               Expanded(child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: kBlue),
                 onPressed: () async {
-                  if (firstName.text.isEmpty || email.text.isEmpty) {
-                    kError(ctx, 'Ad ve E-posta zorunludur');
+                  if (firstName.text.isEmpty || email.text.isEmpty || tcC.text.isEmpty) {
+                    kError(ctx, 'Ad, E-posta ve TC zorunludur');
                     return;
                   }
                   final payload = {
-                    'roleId': 2,
+                    'role': 1, // Company manager
                     'firstName': firstName.text,
                     'lastName': lastName.text,
                     'email': email.text,
                     if (password.text.isNotEmpty) 'passwordHash': password.text,
-                    'phone': phone.text,
-                    'driverTripStatus': status,
-                    'parentUserId': null,
-                    'tcIdentityNumber': item?['tcIdentityNumber'],
-                    'criminalRecord': item?['criminalRecord'],
-                    'driverLicenseId': item?['driverLicenseId'],
-                    'driverScore': item?['driverScore'] ?? 80,
-                    'assignedVehicleId': item?['assignedVehicleId'],
+                    'phoneNumber': phone.text,
+                    'tcIdentityNumber': tcC.text,
+                    'parentManagerId': null,
+                    'criminalRecord': null,
+                    'companyId': widget.defaultCompanyId,
                   };
                   try {
                     if (isEdit && item['id'] != null) {
