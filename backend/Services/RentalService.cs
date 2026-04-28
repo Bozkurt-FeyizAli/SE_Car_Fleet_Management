@@ -2,6 +2,8 @@ using Backend.Data;
 using Backend.DTOs;
 using Backend.Models;
 using Backend.Services.Interfaces;
+using Backend.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services
@@ -10,11 +12,13 @@ namespace Backend.Services
     {
         private readonly AppDbContext _context;
         private readonly IVehicleService _vehicleService;
+        private readonly IHubContext<FleetHub> _hubContext;
 
-        public RentalService(AppDbContext context, IVehicleService vehicleService)
+        public RentalService(AppDbContext context, IVehicleService vehicleService, IHubContext<FleetHub> hubContext)
         {
             _context = context;
             _vehicleService = vehicleService;
+            _hubContext = hubContext;
         }
 
         public async Task<RentalResponse> CreateRentalRequestAsync(RentalRequest request)
@@ -43,8 +47,13 @@ namespace Backend.Services
 
                 _context.Rentals.Add(rental);
                 await _context.SaveChangesAsync();
-                
                 await transaction.CommitAsync();
+
+                // Broadcast RentalCreated event
+                await _hubContext.Clients.All.SendAsync("RentalCreated", new { 
+                    VehiclePlate = rental.VehiclePlate, 
+                    RenterCompanyId = rental.RenterCompanyId 
+                });
 
                 return new RentalResponse(rental);
             }
@@ -122,6 +131,12 @@ namespace Backend.Services
                 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Broadcast VehicleReturned event
+                await _hubContext.Clients.All.SendAsync("VehicleReturned", new { 
+                    RentalId = rental.Id, 
+                    VehiclePlate = rental.VehiclePlate 
+                });
 
                 return new RentalResponse(rental);
             }

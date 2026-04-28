@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 public enum UserRole
 {
-    SistemAdmin,
-    Yönetici,
-    Sürücü
+    SistemAdmin = 0,
+    Yönetici = 1,
+    Sürücü = 2
 }
 
 namespace Backend.Models

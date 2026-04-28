@@ -11,6 +11,6 @@ namespace Backend.DTOs
         public string PhoneNumber { get; set; } = string.Empty;
         public string TcIdentityNumber { get; set; } = string.Empty;
         public string? CriminalRecord { get; set; }
-        public int Role { get; set; } = 3; // Default: Sürücü (3)
+        public int Role { get; set; } = 2; // Default: Sürücü (2)
     }
 }

@@ -3,6 +3,8 @@ using Backend.DTOs.Requests;
 using Backend.DTOs.Responses;
 using Backend.Models;
 using Backend.Services.Interfaces;
+using Backend.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services
@@ -10,10 +12,12 @@ namespace Backend.Services
     public class TripService : ITripService
     {
         private readonly AppDbContext _context;
+        private readonly IHubContext<FleetHub> _hubContext;
 
-        public TripService(AppDbContext context)
+        public TripService(AppDbContext context, IHubContext<FleetHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         public async Task<IEnumerable<TripResponse>> GetActiveTripsByCompanyAsync(int companyId)
@@ -102,6 +106,13 @@ namespace Backend.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Broadcast TripStarted event
+                await _hubContext.Clients.All.SendAsync("TripStarted", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId 
+                });
+
                 return new TripResponse
                 {
                     Id = trip.Id,
@@ -172,6 +183,14 @@ namespace Backend.Services
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Broadcast TripCompleted event
+                await _hubContext.Clients.All.SendAsync("TripCompleted", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId,
+                    EndKm = trip.EndKm
+                });
 
                 return new TripResponse
                 {
