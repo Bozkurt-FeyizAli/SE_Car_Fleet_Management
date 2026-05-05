@@ -108,3 +108,39 @@ Bu değişiklikler proje bütününde senkronizasyon ve veri tutarlılığını 
   - `UsersTab.tsx` dosyaları (hem Manager hem System Admin) bu merkezi arayüzü kullanacak şekilde güncellendi ve lokal tanımlamalar temizlendi.
   - **Filtreleme İyileştirmesi:** Şoför ekleme/düzenleme formundaki "Bağlı Yönetici" dropdown menüsü, şoförün ait olduğu **Şirket ID (`companyId`)** ile filtrelendi. Böylece bir şirketin şoförüne başka bir şirketin yöneticisinin atanması engellendi.
   - `getInitialForm` ve form state yönetimleri, yeni Manager alanlarını (`departmentName`, `officeNumber`) kapsayacak şekilde modernize edildi.
+
+**18. Form ve Kullanıcı Deneyimi Geliştirmeleri (04.05.2026)**
+- **Sicil Kaydı ve TC Kimlik No Düzenlemeleri:** `UsersTab.tsx` ve `DriversTab.tsx` panellerindeki "Sicil Kaydı" alanı serbest metin girişinden çıkarılarak standartlaştırıldı ve dropdown (Temiz/Sicilli) yapısına geçirildi. Rastgele oluşturulan "TC Kimlik No" ve Sicil Kaydı verilerinin Backend veritabanından eksik dönmesi ihtimaline karşı tarayıcı önbelleğine (LocalStorage) fallback mekanizması eklendi; böylece düzenleme ekranında verilerin tekrar görünür olması sağlandı.
+- **Araç Durumu Gösterimi:** `VehiclesTab.tsx` içerisindeki araç düzenleme modalında "Durum" seçeneği, aracın o anki dinamik ve fiili durumuna göre ("Seferde (Aktif)", "Kiralık (Aktif)" veya "Kiraya Verdik (Aktif)") adlandırılacak şekilde güncellendi, ancak yöneticinin aracı gerektiğinde "Pasif" konuma alabilme yetkisi korundu.
+- **Adres Sistemi (Mahalle Seçimi):** `LocationsTab.tsx` panelindeki konum formu geliştirildi. TurkiyeAPI kullanılarak, seçilen ilçeye ait **Mahallelerin** api üzerinden dinamik olarak getirilip dropdown şeklinde listelenmesi sağlandı. Türkiye genelinde tüm caddeleri sunan ücretsiz bir API bulunmadığı için "Cadde / Sokak" alanı kullanıcı onaylı kararla tekrar serbest metin girişi (Input) yapıldı; böylece kullanıcılar gerçek sokak isimlerini hiçbir kısıtlama olmadan özgürce yazabilecek. Harita üzerinden adres tıklandığında mahalle verilerinin otomatik indirilip forma yansıması işlemi entegre edildi.
+- **Dinamik Koordinat Güncellemesi (Forward Geocoding):** Konum düzenleme ekranında adres alanları (Şehir, İlçe, Mahalle, Sokak) değiştirildiğinde, OpenStreetMap üzerinden anlık olarak "Forward Geocoding" (adresten enlem/boylam bulma) tetiklenmesi sağlandı. Böylece adres değiştiği anda formun üzerindeki "Seçilen Enlem / Boylam" değerleri ve arka planda gönderilecek `latitude` / `longitude` verisi yeni adrese göre otomatik olarak güncellenir hale getirildi.
+
+**19. Departman Yönetimi ve Departman Bazlı Yetki Eşitleme Sistemi (05.05.2026)**
+- **İhtiyaç:** Departman değiştirme ve departman yetkisi verme/alma işlemlerinde rol bazlı kısıtlamalar ve departman bazlı toplu (bulk) yetki eşitleme mekanizması gerekiyordu.
+- **Çözüm:** Aşağıdaki 4 temel kural hem `manager/tabs/UsersTab.tsx` hem de `system-admin/tabs/UsersTab.tsx` dosyalarına uygulandı:
+
+  **Kural 1 — System Admin Tam Yetki:** System Admin (role=0) bütün yöneticilerin (Genel yöneticiler dahil) departmanını serbestçe değiştirebilir. Değiştirdiğinde ilgili şirketin Manager API kaydı da (`PUT /api/v1/managers/{id}`) güncellenerek şirkette de o şekilde görünür.
+
+  **Kural 2 — Genel Yönetici Koruması:** Eğer bir yöneticinin departmanı "Genel" ise, bu yöneticinin departmanını **yalnızca System Admin** değiştirebilir. Normal yöneticiler (Genel dahil) bu kişinin departman alanını değiştiremez; form üzerinde `disabled` olarak gösterilir ve kırmızı uyarı mesajı çıkar.
+
+  **Kural 3 — Genel Yöneticilerin Yetki Alanı:** "Genel" departmanındaki yöneticiler, yöneticiler sayfasından diğer **genel olmayan** yöneticilerin departmanlarını değiştirebilir. Ancak bu değişiklik sadece "Genel" harici departmanlara yapılabilir (dropdown'da "Genel" seçeneği gizlenir). `canChangeDepartment` flag'i ile `isSystemAdmin || (isCurrentUserGenel && !isEditItemGenel)` koşulu kontrol edilir. Genel olmayan bir yönetici başka yöneticinin departmanını değiştiremez.
+
+  **Kural 4 — Departman Bazlı Toplu Yetki Eşitleme:** Bir yöneticiye departman yetkisi verildiğinde veya alındığında, o departmandaki **tüm** yöneticiler aynı yetki setini otomatik olarak alır. Örneğin Lojistik departmanındaki birine "RENTALS_APPROVE" yetkisi tiklendiğinde, Lojistik'teki diğer yöneticilerin de `ManagerPermission` tablosuna aynı yetki eklenir. Aynı şekilde yetki kaldırıldığında departmandaki herkesten kaldırılır. Bu işlem şu adımlarla gerçekleşir:
+    1. Önce düzenlenen yöneticinin kendi yetkileri `syncPermissionsForManager()` fonksiyonu ile güncellenir (`POST /api/ManagerPermission` ve `DELETE /api/ManagerPermission/{id}`).
+    2. Ardından aynı şirketteki, aynı departmandaki diğer yöneticiler (`/api/v1/managers` + `/api/User` cross-check ile) tespit edilir.
+    3. Her bir peer yöneticinin hem Manager API'si (`PUT /api/v1/managers/{id}`) hem de ManagerPermission kayıtları güncellenir.
+    4. İşlem tamamlandığında kullanıcıya `toast.info` ile kaç yöneticinin etkilendiği bildirilir.
+
+- **Dosya Değişiklikleri:**
+  - `Frontend/src/app/components/manager/tabs/UsersTab.tsx`
+    - `canChangeDepartment` mantığı eklendi (System Admin > Genel Yönetici > Normal Yönetici hiyerarşisi).
+    - Departman dropdown'unda "Genel" seçeneği sadece System Admin veya halihazırda Genel olan kişi için görünür.
+    - `disableDepartmentSelect` koşulu güncellendi: `!!(editItem && !canChangeDepartment)`.
+    - `syncPermissionsForManager()` fonksiyonu eklendi — parametre olarak `permsToSet` alarak herhangi bir yöneticinin yetkilerini belirtilen sete eşitler.
+    - Departman bazlı bulk yetki eşitleme: API'den güncel manager + user listesi çekilip, aynı departman + şirketteki peerlar bulunarak tüm yetkileri eşitlenir.
+    - Uyarı mesajları iyileştirildi: Genel yöneticiler için kırmızı, yetkisiz yöneticiler için sarı uyarı.
+  - `Frontend/src/app/components/system-admin/tabs/UsersTab.tsx`
+    - `permissionsList` state'i ve `fetch("/api/Permission")` çağrısı eklendi.
+    - Form alanına "Departman Yetkileri" checkbox paneli eklendi (rol=1 olduğunda görünür).
+    - Manager API güncelleme bloğunun ardına `syncPermsFor()` fonksiyonu ve departman bazlı bulk yetki eşitleme mantığı eklendi.
+    - System Admin'in tüm departmanları ve yetkileri sınırsız değiştirebildiğini belirten bilgi metni eklendi.

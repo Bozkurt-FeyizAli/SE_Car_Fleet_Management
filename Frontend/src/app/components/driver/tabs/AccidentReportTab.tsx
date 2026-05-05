@@ -15,14 +15,25 @@ export function AccidentReportTab({ user }: { user?: any }) {
   const [liveVehicles, setLiveVehicles] = useState<any[]>([]);
   const driverId = user?.id || (JSON.parse(localStorage.getItem('user') || '{}').id);
 
-  const myReports = () => accidentReports.filter(r => r.driver_id === driverId);
+  const getLocalReports = (): AccidentReport[] => {
+    try {
+      const stored = localStorage.getItem('fleet_accident_reports');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return accidentReports; // fallback to mock data as initial state
+  };
+
+  const myReports = () => getLocalReports().filter((r: AccidentReport) => r.driver_id === driverId);
   const [data, setData] = useState(myReports());
 
   useEffect(() => {
     apiFetch("/v1/vehicles")
       .then(res => setLiveVehicles(Array.isArray(res) ? res : (res?.data || [])))
       .catch(console.error);
-  }, []);
+    
+    // Initial sync from localstorage
+    setData(myReports());
+  }, [driverId]);
 
   const driverVehicle = liveVehicles.find(v => v.driverId === driverId);
 
@@ -38,8 +49,12 @@ export function AccidentReportTab({ user }: { user?: any }) {
       toast.error("Lutfen aciklama ve konum bilgilerini girin");
       return;
     }
+    
+    const currentReports = getLocalReports();
+    const newId = currentReports.length > 0 ? Math.max(...currentReports.map(r => r.id)) + 1 : nextId();
+
     const newReport: AccidentReport = {
-      id: nextId(),
+      id: newId,
       driver_id: driverId,
       vehicle_id: driverVehicle?.id || driverVehicle?.plate || 0,
       description: form.description,
@@ -50,8 +65,27 @@ export function AccidentReportTab({ user }: { user?: any }) {
       photos: [],
       created_at: new Date().toISOString(),
     };
-    accidentReports.push(newReport);
-    setData(myReports());
+    
+    const updatedReports = [...currentReports, newReport];
+    localStorage.setItem('fleet_accident_reports', JSON.stringify(updatedReports));
+    
+    // Add to Audit logs
+    try {
+      const storedAudit = localStorage.getItem('fleet_audit_logs');
+      const auditArr = storedAudit ? JSON.parse(storedAudit) : [];
+      const validIds = auditArr.map((a: any) => a.id).filter((id: number) => id < 1000000);
+      const nextAuditId = validIds.length > 0 ? Math.max(...validIds) + 1 : 20;
+      auditArr.push({
+        id: nextAuditId,
+        user_id: -1,
+        action_type: "kaza_bildirimi",
+        description: `${form.location} konumunda kaza bildirildi.`,
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem('fleet_audit_logs', JSON.stringify(auditArr));
+    } catch(e) {}
+
+    setData(updatedReports.filter(r => r.driver_id === driverId));
     setForm({ description: "", location: "", severity: "minor", date: new Date().toISOString().slice(0, 10) });
     toast.success("Kaza bildirimi basariyla gonderildi");
   };

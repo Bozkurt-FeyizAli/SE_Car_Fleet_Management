@@ -509,7 +509,9 @@ export function VehiclesTab() {
           
           <Field label="Durum (Aktif/Pasif)">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.isActive ? "true" : "false"} onChange={e => setForm({ ...form, isActive: e.target.value === "true" })}>
-              <option value="true">Aktif</option>
+              <option value="true">
+                {(form as any).isOnTrip ? "Seferde (Aktif)" : (form as any).isRentedOut ? "Kiraya Verdik (Aktif)" : form.isRentedIntoCompany ? "Kiralık (Aktif)" : "Aktif"}
+              </option>
               <option value="false">Pasif</option>
             </select>
           </Field>

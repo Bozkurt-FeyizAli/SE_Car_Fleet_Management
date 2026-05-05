@@ -38,6 +38,8 @@ export function UsersTab() {
   const [showForm, setShowForm] = useState(false);
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [permissionsList, setPermissionsList] = useState<any[]>([]);
 
   const getInitialForm = (): ApiUser => ({
     roleId: 1,
@@ -54,6 +56,7 @@ export function UsersTab() {
     driverScore: 100,
     driverTripStatus: "Boşta",
     assignedVehiclePlate: "",
+    departmentId: 0,
     departmentName: "Merkez",
     officeNumber: "101",
   });
@@ -79,7 +82,12 @@ export function UsersTab() {
             const mList = await managersRes.json();
             if (Array.isArray(mList)) {
                mList.forEach((m: any) => {
-                  managersMap.set(m.userId, { managerId: m.id, departmentName: m.departmentName, officeNumber: m.officeNumber });
+                  managersMap.set(m.userId, { 
+                    managerId: m.id, 
+                    departmentId: m.departmentId,
+                    departmentName: m.departmentName, 
+                    officeNumber: m.officeNumber 
+                  });
                });
             }
          } catch(e) {}
@@ -103,15 +111,17 @@ export function UsersTab() {
         else if (localStorage.getItem(`is_manager_${u.id}`) === 'true') roleIdVal = 1;
         else if (localStorage.getItem(`is_driver_${u.id}`) === 'true') roleIdVal = 2;
 
+        let merged = { ...u, roleId: roleIdVal };
+        const mData = managersMap.get(u.id);
+
         if (metaStr) {
           try {
             const meta = JSON.parse(metaStr);
-            return { ...u, ...meta, roleId: roleIdVal }; // meta içinden roleId gelse bile, yukarıdaki güvenli overrides'ı kullanıyoruz
+            merged = { ...merged, ...meta, roleId: roleIdVal };
           } catch (e) {}
         }
         
-        let merged = { ...u, roleId: roleIdVal };
-        const mData = managersMap.get(u.id);
+        // Manager verisi (departman, ofis) her zaman en son uygulanır — API kaynağı localStorage'dan daha güncel
         if (roleIdVal === 1 && mData) {
             merged = { ...merged, ...mData };
         }
@@ -128,6 +138,14 @@ export function UsersTab() {
 
   useEffect(() => {
     fetchUsers();
+    fetch("/api/v1/departments")
+      .then(res => res.json())
+      .then(data => setDepartments(Array.isArray(data) ? data : []))
+      .catch(() => {});
+    fetch("/api/Permission")
+      .then(res => res.json())
+      .then(data => setPermissionsList(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }, []);
 
   const openAdd = () => {
@@ -143,7 +161,18 @@ export function UsersTab() {
   const openEdit = (item: ApiUser) => {
     // Normalize role as integer for the form's roleId field from both potential props
     const numericRole = item.roleId !== undefined && item.roleId !== null ? Number(item.roleId) : (item as any).role;
-    setForm({ ...item, roleId: numericRole, passwordHash: "" });
+    
+    // LocalStorage Fallbacks
+    const localTc = localStorage.getItem(`user_tc_${item.id}`);
+    const localCriminal = localStorage.getItem(`user_criminal_${item.id}`);
+    
+    setForm({ 
+      ...item, 
+      roleId: numericRole, 
+      passwordHash: "",
+      tcIdentityNumber: item.tcIdentityNumber || localTc || "",
+      criminalRecord: item.criminalRecord || localCriminal || ""
+    });
     setEditItem(item);
     setShowForm(true);
   };
@@ -249,20 +278,38 @@ export function UsersTab() {
               localStorage.removeItem(`is_superadmin_${userId}`);
               localStorage.removeItem(`is_driver_${userId}`);
               localStorage.removeItem(`driver_meta_${userId}`);
+              localStorage.setItem(`user_tc_${userId}`, form.tcIdentityNumber || "");
+              localStorage.setItem(`user_criminal_${userId}`, form.criminalRecord || "");
+           }
 
-              // YENİ: Manager API Entegrasyonu (Gerçek Manager Entity oluşturma)
-              if (editItem && editItem.managerId) {
+           // Manager API Güncelleme: Rol 1 (Yönetici) ise her zaman çalışsın
+           if (targetRole === 1 && form.departmentName) {
+              let resolvedManagerId = editItem?.managerId;
+              if (!resolvedManagerId) {
                 try {
-                   await fetch(`/api/v1/managers/${editItem.managerId}`, {
+                  const mListRes = await fetch("/api/v1/managers");
+                  if (mListRes.ok) {
+                    const mList = await mListRes.json();
+                    const found = Array.isArray(mList) ? mList.find((m: any) => m.userId === userId) : null;
+                    if (found) resolvedManagerId = found.id;
+                  }
+                } catch(e) {}
+              }
+
+              if (resolvedManagerId) {
+                try {
+                   const putRes = await fetch(`/api/v1/managers/${resolvedManagerId}`, {
                      method: "PUT",
                      headers: { "Content-Type": "application/json" },
                      body: JSON.stringify({
                        userId: userId,
-                       departmentName: form.departmentName || "Merkez",
+                       departmentId: form.departmentId,
+                       departmentName: form.departmentName,
                        officeNumber: form.officeNumber || "101",
-                       permissionIds: [0]
+                       permissionIds: form.permissionIds && form.permissionIds.length > 0 ? form.permissionIds : []
                      })
                    });
+                   if (!putRes.ok) console.error("Manager PUT başarısız:", putRes.status, await putRes.text());
                 } catch(err) { console.error("Manager API PUT err:", err); }
               } else {
                 try {
@@ -271,16 +318,53 @@ export function UsersTab() {
                      headers: { "Content-Type": "application/json" },
                      body: JSON.stringify({
                        userId: userId,
-                       departmentName: form.departmentName || "Merkez",
+                       departmentId: form.departmentId,
+                       departmentName: form.departmentName,
                        officeNumber: form.officeNumber || "101",
-                       permissionIds: [0]
+                       permissionIds: []
                      })
                    });
                 } catch(err) { console.error("Manager API POST error:", err); }
-              }
-           }
-        }
-      } catch(e) {}
+               }
+
+               // DEPARTMAN BAZLI YETKİ EŞİTLEME — System Admin tüm departmanları değiştirebilir
+               const targetPerms = form.permissionIds || [];
+               const syncPermsFor = async (mId: number, permsSet: number[]) => {
+                 try {
+                   const mpR = await fetch(`/api/ManagerPermission?t=${Date.now()}`);
+                   if (!mpR.ok) return;
+                   const mpL = await mpR.json();
+                   const cur = mpL.filter((mp: any) => mp.managerId === mId || mp.ManagerId === mId);
+                   const curIds = cur.map((mp: any) => mp.permissionId || mp.PermissionId);
+                   const adds = permsSet.filter((id: number) => !curIds.includes(id));
+                   const rems = cur.filter((mp: any) => !permsSet.includes(mp.permissionId || mp.PermissionId));
+                   const ps: Promise<any>[] = [];
+                   for (const id of adds) ps.push(fetch("/api/ManagerPermission", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ managerId: mId, permissionId: id }) }));
+                   for (const mp of rems) { const mid2 = mp.id || mp.Id; if (mid2 !== undefined) ps.push(fetch(`/api/ManagerPermission/${mid2}`, { method: "DELETE" })); }
+                   await Promise.all(ps);
+                 } catch(e) { console.error("Perm sync err:", e); }
+               };
+               if (resolvedManagerId) await syncPermsFor(resolvedManagerId, targetPerms);
+               try {
+                 const allMgrs = await fetch("/api/v1/managers").then(r => r.ok ? r.json() : []);
+                 const allUsrs = await fetch("/api/User").then(r => r.ok ? r.json() : []);
+                 const peers = (Array.isArray(allMgrs) ? allMgrs : []).filter((m: any) => {
+                   if (m.id === resolvedManagerId) return false;
+                   if (m.departmentName !== form.departmentName) return false;
+                   const mu = allUsrs.find((u: any) => u.id === m.userId);
+                   return mu && mu.companyId === Number(form.companyId);
+                 });
+                 if (peers.length > 0) {
+                   await Promise.all(peers.map(async (peer: any) => {
+                     await fetch(`/api/v1/managers/${peer.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: peer.userId, departmentId: form.departmentId, departmentName: form.departmentName, officeNumber: peer.officeNumber || "101", permissionIds: targetPerms }) }).catch(e => console.error(e));
+                     await syncPermsFor(peer.id, targetPerms);
+                   }));
+                   toast.info(`"${form.departmentName}" departmanındaki ${peers.length} yöneticinin yetkileri de güncellendi.`);
+                 }
+               } catch(e) { console.error("Dept bulk sync err:", e); }
+            }
+         }
+       } catch(e) { console.error("Post-save error:", e); }
 
       toast.success(editItem ? "Kullanıcı güncellendi" : "Kullanıcı eklendi");
       setShowForm(false);
@@ -377,8 +461,48 @@ export function UsersTab() {
           
           {Number(form.roleId) === 1 && (
             <>
-              <Field label="Departman"><Input value={form.departmentName || ""} onChange={e => setForm({ ...form, departmentName: e.target.value })} placeholder="Örn: Operasyon" /></Field>
+              <Field label="Departman">
+                <select
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground"
+                  value={form.departmentName || ""}
+                  onChange={e => {
+                    const depName = e.target.value;
+                    const depObj = departments.find(d => d.departmentName === depName);
+                    const depId = depObj ? depObj.id : 0;
+                    setForm({ ...form, departmentId: depId, departmentName: depName });
+                  }}
+                  disabled={!form.companyId}
+                >
+                  <option value="">Departman Seçiniz...</option>
+                  {departments.filter(d => d.companyId === Number(form.companyId)).map(d => (
+                    <option key={d.id} value={d.departmentName}>{d.departmentName}</option>
+                  ))}
+                </select>
+                {!form.companyId && <p className="text-xs text-muted-foreground mt-1">Önce şirket seçmelisiniz.</p>}
+              </Field>
               <Field label="Ofis/Oda No"><Input value={form.officeNumber || ""} onChange={e => setForm({ ...form, officeNumber: e.target.value })} placeholder="Örn: 201" /></Field>
+              <div className="col-span-1 sm:col-span-2">
+                <Field label="Departman Yetkileri">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-2 p-3 border rounded-md bg-muted/20">
+                    {permissionsList.length > 0 ? permissionsList.map(p => (
+                      <label key={p.id} className="flex items-center gap-2 text-sm select-none">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          checked={(form.permissionIds || []).includes(p.id)} 
+                          onChange={(e) => {
+                            const current = form.permissionIds || [];
+                            if (e.target.checked) setForm({ ...form, permissionIds: [...current, p.id] });
+                            else setForm({ ...form, permissionIds: current.filter(id => id !== p.id) });
+                          }} 
+                        />
+                        {p.name}
+                      </label>
+                    )) : <span className="text-muted-foreground text-xs col-span-full">Henüz sistemde kayıtlı yetki bulunmuyor.</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">System Admin tüm departman yetkilerini değiştirebilir. Değişiklikler aynı departmandaki tüm yöneticilere uygulanır.</p>
+                </Field>
+              </div>
             </>
           )}
           <Field label="Rol">

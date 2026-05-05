@@ -224,14 +224,14 @@ export function RentalsTab() {
 
   // Geçmiş (iade edilmiş veya reddedilmiş)
   const pastRentals = data.filter(r =>
-    r.returnDate || r.status === "Rejected" || r.status === "Returned"
+    r.returnDate || r.status === "Rejected" || r.status === "Completed"
   );
 
   // ─────────────────────────────── STATUS BADGE ───────────────────────────────
   const rentalStatusBadge = (r: any) => {
     if (r.status === "Pending") return <StatusBadge label="Onay Bekliyor" variant="warning" />;
     if (r.status === "Rejected") return <StatusBadge label="Reddedildi" variant="danger" />;
-    if (r.returnDate) return <StatusBadge label="İade Edildi" variant="neutral" />;
+    if (r.returnDate || r.status === "Completed") return <StatusBadge label="Tamamlandı" variant="neutral" />;
     if (r.renterCompanyId === currentCompany.id) return <StatusBadge label="Kiralıyoruz" variant="info" />;
     if (r.rentedCompanyId === currentCompany.id) return <StatusBadge label="Kiraya Verdik" variant="warning" />;
     return <StatusBadge label="Aktif" variant="success" />;
