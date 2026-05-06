@@ -13,14 +13,16 @@ namespace Backend.Models
         public int UserId { get; set; }
 
         [Required]
-        [MaxLength(100)]
-        public string DepartmentName { get; set; } = string.Empty;
+        public int DepartmentId { get; set; }
 
         [MaxLength(20)]
         public string? OfficeNumber { get; set; }
 
         [ForeignKey("UserId")]
         public User User { get; set; } = null!;
+
+        [ForeignKey("DepartmentId")]
+        public Department Department { get; set; } = null!;
 
         public List<ManagerPermission> Permissions { get; set; } = new();
     }

@@ -3,6 +3,8 @@ using Backend.DTOs.Requests;
 using Backend.DTOs.Responses;
 using Backend.Models;
 using Backend.Services.Interfaces;
+using Backend.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Services
@@ -10,10 +12,12 @@ namespace Backend.Services
     public class TripService : ITripService
     {
         private readonly AppDbContext _context;
+        private readonly IHubContext<FleetHub> _hubContext;
 
-        public TripService(AppDbContext context)
+        public TripService(AppDbContext context, IHubContext<FleetHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         public async Task<IEnumerable<TripResponse>> GetActiveTripsByCompanyAsync(int companyId)
@@ -90,17 +94,24 @@ namespace Backend.Services
                     EndLocationId = request.EndLocationId,
                     StartTime = DateTime.UtcNow,
                     StartKm = vehicle.CurrentKm,
-                    Status = "InTrip"
+                    Status = "Preparing"
                 };
 
                 _context.Trips.Add(trip);
 
                 vehicle.IsActive = false;
-                driver.Status = "InTrip";
+                driver.Status = "Preparing";
                 driver.VehiclePlate = vehicle.Plate;
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Broadcast TripStarted event
+                await _hubContext.Clients.All.SendAsync("TripStarted", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId 
+                });
 
                 return new TripResponse
                 {
@@ -173,6 +184,14 @@ namespace Backend.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Broadcast TripCompleted event
+                await _hubContext.Clients.All.SendAsync("TripCompleted", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId,
+                    EndKm = trip.EndKm
+                });
+
                 return new TripResponse
                 {
                     Id = trip.Id,
@@ -193,6 +212,151 @@ namespace Backend.Services
                 await transaction.RollbackAsync();
                 throw;
             }
+        }
+        public async Task<TripResponse> AcceptTripAsync(int tripId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null) throw new Exception("Trip not found.");
+                if (trip.Status != "Preparing") throw new Exception("Trip is not in Preparing state.");
+
+                var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.Id == trip.DriverId);
+                if (driver == null) throw new Exception("Driver not found.");
+
+                trip.Status = "InTrip";
+                trip.StartTime = DateTime.UtcNow;
+
+                driver.Status = "InTrip";
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                await _hubContext.Clients.All.SendAsync("TripAccepted", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId 
+                });
+
+                return new TripResponse
+                {
+                    Id = trip.Id,
+                    DriverId = trip.DriverId,
+                    VehiclePlate = trip.VehiclePlate,
+                    StartLocationId = trip.StartLocationId,
+                    EndLocationId = trip.EndLocationId,
+                    StartTime = trip.StartTime,
+                    EndTime = trip.EndTime,
+                    StartKm = trip.StartKm,
+                    EndKm = trip.EndKm,
+                    TotalFee = trip.TotalFee,
+                    Status = trip.Status
+                };
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+
+        public async Task<TripResponse> RejectTripAsync(int tripId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null) throw new Exception("Trip not found.");
+                if (trip.Status != "Preparing") throw new Exception("Trip is not in Preparing state.");
+
+                var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.Id == trip.DriverId);
+                if (driver == null) throw new Exception("Driver not found.");
+
+                var vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.Plate == trip.VehiclePlate);
+                if (vehicle == null) throw new Exception("Vehicle not found.");
+
+                trip.Status = "Cancelled";
+                
+                driver.Status = "Idle";
+                driver.VehiclePlate = null;
+                
+                vehicle.IsActive = true;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                await _hubContext.Clients.All.SendAsync("TripRejected", new { 
+                    TripId = trip.Id, 
+                    VehiclePlate = trip.VehiclePlate, 
+                    DriverId = trip.DriverId 
+                });
+
+                return new TripResponse
+                {
+                    Id = trip.Id,
+                    DriverId = trip.DriverId,
+                    VehiclePlate = trip.VehiclePlate,
+                    StartLocationId = trip.StartLocationId,
+                    EndLocationId = trip.EndLocationId,
+                    StartTime = trip.StartTime,
+                    EndTime = trip.EndTime,
+                    StartKm = trip.StartKm,
+                    EndKm = trip.EndKm,
+                    TotalFee = trip.TotalFee,
+                    Status = trip.Status
+                };
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+
+        public async Task<TripResponse?> GetTripByIdAsync(int id)
+        {
+            var trip = await _context.Trips.FindAsync(id);
+            if (trip == null) return null;
+            return new TripResponse
+            {
+                Id = trip.Id,
+                DriverId = trip.DriverId,
+                VehiclePlate = trip.VehiclePlate,
+                StartLocationId = trip.StartLocationId,
+                EndLocationId = trip.EndLocationId,
+                StartTime = trip.StartTime,
+                EndTime = trip.EndTime,
+                StartKm = trip.StartKm,
+                EndKm = trip.EndKm,
+                TotalFee = trip.TotalFee,
+                Status = trip.Status
+            };
+        }
+
+        public async Task<bool> UpdateTripAsync(int id, TripRequest request)
+        {
+            var trip = await _context.Trips.FindAsync(id);
+            if (trip == null) return false;
+
+            trip.DriverId = request.DriverId;
+            trip.VehiclePlate = request.VehiclePlate;
+            trip.StartLocationId = request.StartLocationId;
+            trip.EndLocationId = request.EndLocationId;
+
+            _context.Trips.Update(trip);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> DeleteTripAsync(int id)
+        {
+            var trip = await _context.Trips.FindAsync(id);
+            if (trip == null) return false;
+
+            _context.Trips.Remove(trip);
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

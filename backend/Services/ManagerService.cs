@@ -17,13 +17,17 @@ namespace Backend.Services
 
         public async Task<IEnumerable<ManagerResponse>> GetAllManagersAsync()
         {
-            var managers = await _context.Managers.ToListAsync();
+            var managers = await _context.Managers
+                .Include(m => m.Department)
+                .ToListAsync();
             return managers.Select(m => new ManagerResponse(m));
         }
 
         public async Task<ManagerResponse?> GetManagerByIdAsync(int id)
         {
-            var manager = await _context.Managers.FirstOrDefaultAsync(m => m.Id == id);
+            var manager = await _context.Managers
+                .Include(m => m.Department)
+                .FirstOrDefaultAsync(m => m.Id == id);
             if (manager == null) return null;
             return new ManagerResponse(manager);
         }
@@ -38,10 +42,14 @@ namespace Backend.Services
             if (existingManager)
                 throw new Exception("Bu kullanıcı zaten bir yönetici olarak kayıtlı.");
 
+            var deptExists = await _context.Departments.AnyAsync(d => d.Id == request.DepartmentId);
+            if (!deptExists)
+                throw new Exception("Departman bulunamadı.");
+
             var manager = new Manager
             {
                 UserId = request.UserId,
-                DepartmentName = request.DepartmentName,
+                DepartmentId = request.DepartmentId,
                 OfficeNumber = request.OfficeNumber
             };
 
@@ -72,12 +80,19 @@ namespace Backend.Services
         {
             var manager = await _context.Managers
                 .Include(m => m.Permissions)
+                .Include(m => m.Department)
                 .FirstOrDefaultAsync(m => m.Id == id);
                 
             if (manager == null) return false;
 
+            if (request.DepartmentId != 0)
+            {
+                var deptExists = await _context.Departments.AnyAsync(d => d.Id == request.DepartmentId);
+                if (!deptExists) throw new Exception("Departman bulunamadı.");
+                manager.DepartmentId = request.DepartmentId;
+            }
+
             manager.UserId = request.UserId;
-            manager.DepartmentName = request.DepartmentName;
             manager.OfficeNumber = request.OfficeNumber;
 
             // Update permissions

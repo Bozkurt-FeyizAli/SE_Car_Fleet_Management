@@ -18,7 +18,7 @@ function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; valu
   );
 }
 
-export function VehicleTab() {
+export function VehicleTab({ user }: { user?: any }) {
   const [vehicle, setVehicle] = useState<ApiVehicle | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -108,7 +108,12 @@ export function VehicleTab() {
         <InfoCard icon={Calendar} label="Muayene Bitiş" value={vehicle.inspectionEndDate ? new Date(vehicle.inspectionEndDate).toLocaleDateString("tr-TR") : "—"} />
         <InfoCard icon={Gauge} label="Sonraki Bakım" value={`${(vehicle.nextMaintenanceKm || 0).toLocaleString("tr-TR")} km`} />
         <InfoCard icon={DollarSign} label="Taban Fiyat" value={`₺${(vehicle.baseRentPrice || 0).toLocaleString("tr-TR")}`} />
-        <InfoCard icon={Clock} label="Durum" value={<StatusBadge label={vehicle.isActive ? "Aktif" : "Pasif"} variant={vehicle.isActive ? "success" : "neutral"} />} />
+        <InfoCard icon={Clock} label="Durum" value={(() => {
+          const s = (user?.driverTripStatus || "").toLowerCase();
+          if (s === "intrip" || s === "seferde" || s === "on_trip") return <StatusBadge label="Seferde" variant="info" />;
+          if (s === "inactive" || s === "pasif") return <StatusBadge label="Pasif" variant="neutral" />;
+          return <StatusBadge label="Aktif" variant="success" />;
+        })()} />
       </div>
     </div>
   );

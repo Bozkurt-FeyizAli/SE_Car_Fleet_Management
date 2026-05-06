@@ -1,21 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { DataTable, Column } from "../../shared/DataTable";
-import { StatusBadge, getStatusVariant, getStatusLabel } from "../../shared/StatusBadge";
+import { StatusBadge } from "../../shared/StatusBadge";
 import { FormDialog, Field, ConfirmDialog } from "../../shared/FormDialog";
 import { Input } from "../../ui/input";
 import { currentCompany } from "../ManagerPanel";
 import { toast } from "sonner";
 import { apiFetch } from "../../../utils/api";
+import { CheckCircle2, XCircle, Clock, Truck, ArrowLeftRight, RotateCcw, Plus } from "lucide-react";
 
-// Using live fetching for companies instead of mockData
 export function RentalsTab() {
   const [data, setData] = useState<any[]>([]);
   const [availableVehicles, setAvailableVehicles] = useState<any[]>([]);
   const [allVehicles, setAllVehicles] = useState<any[]>([]);
   const [liveCompanies, setLiveCompanies] = useState<any[]>([]);
-  const [editItem, setEditItem] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteItem, setDeleteItem] = useState<any | null>(null);
   const [returnItem, setReturnItem] = useState<any | null>(null);
   const [form, setForm] = useState({
     ownerCompanyId: "",
@@ -27,128 +24,109 @@ export function RentalsTab() {
     endDate: "",
     returnKm: 0
   });
-
   const [loading, setLoading] = useState(false);
 
-  const fetchMyRentals = async () => {
+  // ─────────────────────────────── FETCH ───────────────────────────────
+  const fetchAll = async () => {
     try {
       const result = await apiFetch("/v1/rentals/my-rentals");
-      if (Array.isArray(result)) setData(result);
-      else if (result && Array.isArray(result.data)) setData(result.data); // in case it is wrapped
-      else setData([]);
+      setData(Array.isArray(result) ? result : (result?.data || []));
     } catch (error: any) {
       toast.error("Kiralamalar getirilemedi: " + error.message);
     }
   };
 
   const fetchAvailable = async (ownerId: number | string) => {
-    if (!ownerId) {
-      setAvailableVehicles([]);
-      return;
-    }
+    if (!ownerId) { setAvailableVehicles([]); return; }
     try {
-      // Tüm araçları ve aktif kiralamaları çek, halihazırda kirada olanları filtrele
-      const [vehiclesResult, rentalsResult] = await Promise.all([
+      const [vehiclesResult, allRentalsResult] = await Promise.all([
         apiFetch(`/v1/vehicles`),
-        apiFetch(`/v1/rentals/my-rentals`).catch(() => [])
+        apiFetch(`/v1/rentals/all`).catch(() => [])
       ]);
-      
       const vehicles = Array.isArray(vehiclesResult) ? vehiclesResult : (vehiclesResult?.data || []);
-      const rentals = Array.isArray(rentalsResult) ? rentalsResult : (rentalsResult?.data || []);
-      
-      // Aktif (iade edilmemiş) kiralamalardaki plakaları bul
-      const activelyRentedPlates = new Set(
-        rentals.filter((r: any) => !r.returnDate).map((r: any) => r.vehiclePlate)
+      const rentals  = Array.isArray(allRentalsResult) ? allRentalsResult : [];
+
+      // Onaylanmış veya bekleyen aktif kiralamalar
+      const blockedPlates = new Set(
+        rentals
+          .filter((r: any) => !r.returnDate && r.status !== "Rejected")
+          .map((r: any) => r.vehiclePlate)
       );
-      
-      // Seçilen şirketin araçlarından, aktif ve kirada olmayanları göster
-      const filtered = vehicles.filter((v: any) => 
-        v.companyId === Number(ownerId) && v.isActive && !activelyRentedPlates.has(v.plate)
+      setAvailableVehicles(
+        vehicles.filter((v: any) => v.companyId === Number(ownerId) && v.isActive && !blockedPlates.has(v.plate))
       );
-      setAvailableVehicles(filtered);
-    } catch (error: any) {
-      console.error(error);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const fetchCompanies = async () => {
     try {
-      const result = await fetch("/api/v1/companies");
-      if (result.ok) {
-        setLiveCompanies(await result.json());
-      }
-    } catch(e) {}
+      const r = await fetch("/api/v1/companies");
+      if (r.ok) setLiveCompanies(await r.json());
+    } catch (e) {}
   };
 
   const fetchAllVehicles = async () => {
     try {
-      const res = await fetch("/api/v1/vehicles");
-      if (res.ok) setAllVehicles(await res.json());
-    } catch(e) {}
+      const r = await fetch("/api/v1/vehicles");
+      if (r.ok) setAllVehicles(await r.json());
+    } catch (e) {}
   };
 
   useEffect(() => {
-    fetchMyRentals();
+    fetchAll();
     fetchCompanies();
     fetchAllVehicles();
   }, []);
 
-  const getLiveCompanyName = (id: number) => {
-    const comp = liveCompanies.find((c: any) => c.id === id);
-    return comp ? (comp.companyName || comp.name) : "Bilinmiyor";
+  // ─────────────────────────────── HELPERS ───────────────────────────────
+  const companyName = (id: number) => {
+    if (!id) return "—";
+    const c = liveCompanies.find((c: any) => c.id === id);
+    return c ? (c.companyName || c.name) : `Şirket #${id}`;
   };
 
-  const calculatePrice = async (plate: string, days: number = 1) => {
+  const vehicleKm = (plate: string) => {
+    const v = allVehicles.find((v: any) => v.plate === plate);
+    return v?.currentKm || 0;
+  };
+
+  const ownerCompanyId = (plate: string) => {
+    const v = allVehicles.find((v: any) => v.plate === plate);
+    return v?.companyId || null;
+  };
+
+  const fmt = (d: string) => d ? new Date(d).toLocaleDateString("tr-TR") : "—";
+
+  // ─────────────────────────────── PRICE CALC ───────────────────────────────
+  const calculatePrice = async (plate: string, days: number) => {
     if (!plate || days <= 0) return;
     try {
-      const result = await apiFetch(`/v1/vehicles/${encodeURIComponent(plate)}/calculate-price?days=${days}`);
-      if (result && result.totalEstimatedPrice !== undefined) {
-        const perDay = result.finalPricePerDay || (result.totalEstimatedPrice / days);
-        setForm(prev => ({ ...prev, dynamicPrice: result.totalEstimatedPrice, dailyPrice: perDay, rentalDays: days }));
+      const res = await apiFetch(`/v1/vehicles/${encodeURIComponent(plate)}/calculate-price?days=${days}`);
+      if (res?.totalEstimatedPrice !== undefined) {
+        setForm(p => ({ ...p, dynamicPrice: res.totalEstimatedPrice, dailyPrice: res.finalPricePerDay || res.totalEstimatedPrice / days, rentalDays: days }));
       } else {
-        // Fallback: araç listesinden baseRentPrice al
-        const v = availableVehicles.find((v: any) => v.plate === plate);
-        const base = v?.baseRentPrice || 0;
-        setForm(prev => ({ ...prev, dynamicPrice: base * days, dailyPrice: base, rentalDays: days }));
+        const base = availableVehicles.find((v: any) => v.plate === plate)?.baseRentPrice || 0;
+        setForm(p => ({ ...p, dynamicPrice: base * days, dailyPrice: base, rentalDays: days }));
       }
-    } catch (error) {
-      // Backend hesaplaması başarısız olursa, araç listesindeki taban fiyatı kullan
-      const v = availableVehicles.find((v: any) => v.plate === plate);
-      const base = v?.baseRentPrice || 0;
-      setForm(prev => ({ ...prev, dynamicPrice: base * days, dailyPrice: base, rentalDays: days }));
+    } catch {
+      const base = availableVehicles.find((v: any) => v.plate === plate)?.baseRentPrice || 0;
+      setForm(p => ({ ...p, dynamicPrice: base * days, dailyPrice: base, rentalDays: days }));
     }
   };
 
   useEffect(() => {
     if (form.vehiclePlate && form.startDate && form.endDate) {
-      const start = new Date(form.startDate).getTime();
-      const end = new Date(form.endDate).getTime();
-      const diffDays = Math.ceil((end - start) / (1000 * 3600 * 24));
-      if (diffDays > 0) {
-        calculatePrice(form.vehiclePlate, diffDays);
-      }
+      const days = Math.ceil((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000);
+      if (days > 0) calculatePrice(form.vehiclePlate, days);
     }
   }, [form.vehiclePlate, form.startDate, form.endDate]);
 
-  const handlePlateChange = (plate: string) => {
-    setForm({ ...form, vehiclePlate: plate });
-    // Attempt to calculate price for 1 day initially
-    calculatePrice(plate, 1);
-  };
-
-  const openAdd = () => {
-    setForm({ ownerCompanyId: "", vehiclePlate: "", dynamicPrice: 0, dailyPrice: 0, rentalDays: 0, startDate: "", endDate: "", returnKm: 0 });
-    setEditItem(null);
-    setAvailableVehicles([]);
-    setShowForm(true);
-  };
-
-  const handleSave = async () => {
+  // ─────────────────────────────── ACTIONS ───────────────────────────────
+  const handleSendRequest = async () => {
     if (!form.ownerCompanyId || !form.vehiclePlate || !form.startDate || !form.endDate) {
-      toast.error("Zorunlu alanlari doldurun");
+      toast.error("Zorunlu alanları doldurun.");
       return;
     }
-
     setLoading(true);
     try {
       await apiFetch("/v1/rentals/request", {
@@ -156,27 +134,50 @@ export function RentalsTab() {
         body: JSON.stringify({
           vehiclePlate: form.vehiclePlate,
           renterCompanyId: currentCompany.id,
+          rentedCompanyId: Number(form.ownerCompanyId),
           startDate: new Date(form.startDate).toISOString(),
           endDate: new Date(form.endDate).toISOString(),
-          rentStartKm: Number(getVehicleKm(form.vehiclePlate) || 0)
+          rentStartKm: vehicleKm(form.vehiclePlate)
         })
       });
-      toast.success("Kiralama talebi başarıyla oluşturuldu");
+      toast.success("Kiralama talebi gönderildi! Karşı şirketin onayı bekleniyor. ⏳");
       setShowForm(false);
-      fetchMyRentals();
-      fetchAllVehicles(); // Araç durumlarını güncelle
-    } catch (error: any) {
-      toast.error("Hata: " + error.message);
+      setForm({ ownerCompanyId: "", vehiclePlate: "", dynamicPrice: 0, dailyPrice: 0, rentalDays: 0, startDate: "", endDate: "", returnKm: 0 });
+      fetchAll();
+      fetchAllVehicles();
+    } catch (e: any) {
+      toast.error("Hata: " + e.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReturnAction = async () => {
+  const handleApprove = async (rentalId: number) => {
+    try {
+      await apiFetch(`/v1/rentals/${rentalId}/approve`, { method: "PATCH" });
+      toast.success("Kiralama talebi onaylandı. Araç kiralık olarak işaretlendi. ✅");
+      fetchAll();
+      fetchAllVehicles();
+    } catch (e: any) {
+      toast.error("Onaylama başarısız: " + e.message);
+    }
+  };
+
+  const handleReject = async (rentalId: number) => {
+    try {
+      await apiFetch(`/v1/rentals/${rentalId}/reject`, { method: "PATCH" });
+      toast.info("Kiralama talebi reddedildi.");
+      fetchAll();
+      fetchAllVehicles();
+    } catch (e: any) {
+      toast.error("Reddetme başarısız: " + e.message);
+    }
+  };
+
+  const handleReturn = async () => {
     if (!returnItem) return;
     try {
-      // 1. Önce kiralamayı iade et
-      await apiFetch(`/v1/rentals/${returnItem.id || returnItem.rentalId}/return`, {
+      await apiFetch(`/v1/rentals/${returnItem.id}/return`, {
         method: "PATCH",
         body: JSON.stringify({
           returnDate: new Date().toISOString(),
@@ -184,154 +185,245 @@ export function RentalsTab() {
           totalPrice: Number(returnItem.totalPrice) || 0
         })
       });
-
-      // 2. Bağlantı Sıkıntısı Fix: Eğer araç iade edildiyse ama üzerinde hala aktif bir SEFER kalmışsa onu da kapat.
-      // Aksi halde araçlar tablosunda "Seferde" olarak takılı kalır.
+      // Araç üzerinde aktif sefer varsa onu da kapat
       try {
-        const ownerId = getOwnerCompanyId(returnItem.vehiclePlate);
-        const activeTripsRes = await apiFetch(`/Trips/active/${ownerId || currentCompany.id}`);
-        const activeTrips = Array.isArray(activeTripsRes) ? activeTripsRes : [];
-        const tripToComplete = activeTrips.find((t: any) => t.vehiclePlate === returnItem.vehiclePlate);
-        
-        if (tripToComplete) {
-          await apiFetch(`/Trips/${tripToComplete.id || tripToComplete.tripId}/complete`, {
+        const ownId = ownerCompanyId(returnItem.vehiclePlate) || currentCompany.id;
+        const trips = await apiFetch(`/Trips/active/${ownId}`);
+        const trip = Array.isArray(trips) ? trips.find((t: any) => t.vehiclePlate === returnItem.vehiclePlate) : null;
+        if (trip) {
+          await apiFetch(`/Trips/${trip.id}/complete`, {
             method: "PATCH",
-            body: JSON.stringify({
-              endTime: new Date().toISOString(),
-              endKm: Number(form.returnKm) || 0
-            })
+            body: JSON.stringify({ endKm: Number(form.returnKm) || 0 })
           });
-          console.log(`Otomatik Sefer Kapatma: ${returnItem.vehiclePlate} plakasının ${tripToComplete.id} nolu seferi kapatıldı.`);
         }
-      } catch (err) {
-        console.warn("Otomatik sefer kapatma sırasında hata (görmezden gelinebilir):", err);
-      }
-
-      toast.success("Araç başarıyla iade edildi ve seferler güncellendi");
+      } catch {}
+      toast.success("Araç başarıyla iade edildi.");
       setReturnItem(null);
-      fetchMyRentals();
-      fetchAllVehicles(); 
-    } catch (error: any) {
-      toast.error("İade işlemi başarısız: " + error.message);
+      fetchAll();
+      fetchAllVehicles();
+    } catch (e: any) {
+      toast.error("İade başarısız: " + e.message);
     }
   };
 
-  const getVehicleKm = (plate: string) => {
-    const v = allVehicles.find((v: any) => v.plate === plate);
-    return v ? v.currentKm : null;
+  // ─────────────────────────────── SEGMENTS ───────────────────────────────
+  // Gelen onay bekleyen talepler (biz araç sahibiyiz)
+  const incomingPending = data.filter(r =>
+    r.rentedCompanyId === currentCompany.id && r.status === "Pending"
+  );
+
+  // Bizim gönderdiğimiz, onay bekleyen talepler
+  const outgoingPending = data.filter(r =>
+    r.renterCompanyId === currentCompany.id && r.status === "Pending"
+  );
+
+  // Aktif (onaylanmış, iade edilmemiş) kiralamalar
+  const activeRentals = data.filter(r =>
+    r.status === "Approved" && !r.returnDate
+  );
+
+  // Geçmiş (iade edilmiş veya reddedilmiş)
+  const pastRentals = data.filter(r =>
+    r.returnDate || r.status === "Rejected" || r.status === "Returned"
+  );
+
+  // ─────────────────────────────── STATUS BADGE ───────────────────────────────
+  const rentalStatusBadge = (r: any) => {
+    if (r.status === "Pending") return <StatusBadge label="Onay Bekliyor" variant="warning" />;
+    if (r.status === "Rejected") return <StatusBadge label="Reddedildi" variant="danger" />;
+    if (r.returnDate) return <StatusBadge label="İade Edildi" variant="neutral" />;
+    if (r.renterCompanyId === currentCompany.id) return <StatusBadge label="Kiralıyoruz" variant="info" />;
+    if (r.rentedCompanyId === currentCompany.id) return <StatusBadge label="Kiraya Verdik" variant="warning" />;
+    return <StatusBadge label="Aktif" variant="success" />;
   };
 
-  // Araç sahibi şirket ID'sini araç listesinden bul
-  const getOwnerCompanyId = (plate: string) => {
-    const v = allVehicles.find((v: any) => v.plate === plate);
-    return v ? v.companyId : null;
-  };
+  const tableHeaderCls = "px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider";
+  const tableCellCls = "px-4 py-3 text-sm text-foreground";
 
-  const columns: Column<any>[] = [
-    { key: "vehicle", header: "Araç", render: (r) => r.vehiclePlate || "Bilinmiyor" },
-    { key: "owner", header: "Araç Sahibi", render: (r) => {
-        const ownerId = getOwnerCompanyId(r.vehiclePlate);
-        return ownerId ? getLiveCompanyName(ownerId) : "—";
-      }
-    },
-    { key: "renter", header: "Kiralayan", render: (r) => r.renterCompanyId ? getLiveCompanyName(r.renterCompanyId) : "Şirket" },
-    { key: "rentKm", header: "Kira KM", render: (r) => `${Number(r.rentStartKm || 0).toLocaleString("tr-TR")} km` },
-    { key: "price", header: "Toplam Ücret", render: (r) => `₺${(r.totalPrice || 0).toLocaleString("tr-TR")}` },
-    { key: "start", header: "Başlangıç", render: (r) => new Date(r.startDate).toLocaleDateString("tr-TR") },
-    { key: "end", header: "Bitiş", render: (r) => r.endDate ? new Date(r.endDate).toLocaleDateString("tr-TR") : "—" },
-    { key: "return", header: "İade Tarihi", render: (r) => r.returnDate ? new Date(r.returnDate).toLocaleDateString("tr-TR") : "—" },
-    { key: "status", header: "Durum", render: (r) => {
-        const ownerId = getOwnerCompanyId(r.vehiclePlate);
-        const isActive = !r.returnDate; // backend Spec: iade_tarihi NULL ise devam ediyor
-        
-        if (isActive) {
-          if (ownerId === currentCompany.id) {
-            return <StatusBadge label="Kiraya Verdik" variant="warning" />;
-          }
-          return <StatusBadge label="Kiralık" variant="info" />;
-        }
-        
-        return <StatusBadge label="İade Edildi" variant="neutral" />;
-      }
-    },
-    {
-      key: "actions",
-      header: "İşlemler",
-      render: (r) => {
-        const isActive = !r.returnDate;
-        // Sadece kiralayan taraf (biz seksek) iade edebilir
-        const isRenter = r.renterCompanyId === currentCompany.id;
-        
-        return (isActive && isRenter) ? (
-          <button
-            onClick={() => { setForm(prev => ({ ...prev, returnKm: 0 })); setReturnItem(r); }}
-            className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded"
-          >
-            İade Et
-          </button>
-        ) : null;
-      }
-    }
-  ];
+  const RentalTable = ({ rows, showActions = false }: { rows: any[], showActions?: boolean }) => (
+    <div className="rounded-lg border border-border bg-card overflow-x-auto">
+      <table className="w-full text-sm text-left">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className={tableHeaderCls}>Araç</th>
+            <th className={tableHeaderCls}>Araç Sahibi</th>
+            <th className={tableHeaderCls}>Kiralayan</th>
+            <th className={tableHeaderCls}>Başlangıç</th>
+            <th className={tableHeaderCls}>Bitiş</th>
+            <th className={tableHeaderCls}>Ücret</th>
+            <th className={tableHeaderCls}>Durum</th>
+            {showActions && <th className={tableHeaderCls}>İşlemler</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map(r => (
+            <tr key={r.id} className="hover:bg-muted/20 transition-colors">
+              <td className={tableCellCls + " font-medium"}>{r.vehiclePlate}</td>
+              <td className={tableCellCls}>{companyName(r.rentedCompanyId || ownerCompanyId(r.vehiclePlate))}</td>
+              <td className={tableCellCls}>{companyName(r.renterCompanyId)}</td>
+              <td className={tableCellCls}>{fmt(r.startDate)}</td>
+              <td className={tableCellCls}>{fmt(r.endDate)}</td>
+              <td className={tableCellCls}>{r.totalPrice ? `₺${Number(r.totalPrice).toLocaleString("tr-TR")}` : "—"}</td>
+              <td className={tableCellCls}>{rentalStatusBadge(r)}</td>
+              {showActions && (
+                <td className={tableCellCls}>
+                  <div className="flex gap-2 flex-wrap">
+                    {/* Gelen talepleri onaylayabiliriz */}
+                    {r.status === "Pending" && r.rentedCompanyId === currentCompany.id && (
+                      <>
+                        <button onClick={() => handleApprove(r.id)} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-md transition-colors">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Onayla
+                        </button>
+                        <button onClick={() => handleReject(r.id)} className="flex items-center gap-1 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs font-medium px-3 py-1.5 rounded-md transition-colors">
+                          <XCircle className="w-3.5 h-3.5" /> Reddet
+                        </button>
+                      </>
+                    )}
+                    {/* Kendi gönderdiğimiz onay bekleyenleri iptal edebiliriz */}
+                    {r.status === "Pending" && r.renterCompanyId === currentCompany.id && (
+                      <button onClick={() => handleReject(r.id)} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium px-3 py-1.5 rounded-md transition-colors">
+                        <XCircle className="w-3.5 h-3.5" /> İptal Et
+                      </button>
+                    )}
+                    {/* Kiralayan taraf iade edebilir */}
+                    {r.status === "Approved" && !r.returnDate && r.renterCompanyId === currentCompany.id && (
+                      <button onClick={() => { setForm(p => ({ ...p, returnKm: vehicleKm(r.vehiclePlate) })); setReturnItem(r); }} className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs font-medium px-3 py-1.5 rounded-md transition-colors">
+                        <RotateCcw className="w-3.5 h-3.5" /> İade Et
+                      </button>
+                    )}
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
+  const EmptyState = ({ text }: { text: string }) => (
+    <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border text-sm">{text}</div>
+  );
+
+  // ─────────────────────────────── RENDER ───────────────────────────────
   return (
-    <div>
-      <h2 className="mb-4">Kiralik Araclar</h2>
-      <DataTable
-        data={data}
-        columns={columns}
-        searchPlaceholder="Kiralama ara..."
-        searchKeys={["vehiclePlate"]}
-        onAdd={openAdd}
-        addLabel="Kiralama Talebi"
-      />
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold tracking-tight">Kiralık Araçlar</h2>
+        <button
+          onClick={() => { setShowForm(true); setAvailableVehicles([]); setForm({ ownerCompanyId: "", vehiclePlate: "", dynamicPrice: 0, dailyPrice: 0, rentalDays: 0, startDate: "", endDate: "", returnKm: 0 }); }}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm px-4 py-2 rounded-md transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Kiralama Talebi
+        </button>
+      </div>
 
-      <FormDialog open={showForm} onClose={() => setShowForm(false)} title="Yeni Kiralama Talebi" onSubmit={handleSave} wide>
-        <div className="space-y-6">
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-md">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <StatusBadge label="BİLGİ" variant="info" />
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-blue-700 font-medium">
-                  Fiyat Hesaplama Mantığı: <br/>
-                  <span className="text-xs font-normal">Fiyat = Taban Fiyat × KM Çarpanı × Hasar Çarpanı × Gün Sayısı</span>
-                </p>
-              </div>
-            </div>
+      {/* ── GELEN BEKLEYEN TALEPLER ── */}
+      {incomingPending.length > 0 && (
+        <section>
+          <h3 className="text-base font-semibold mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Clock className="w-4 h-4" />
+            Gelen Kiralama Talepleri
+            <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{incomingPending.length}</span>
+          </h3>
+          <RentalTable rows={incomingPending} showActions />
+        </section>
+      )}
+
+      {/* ── GİDEN BEKLEYEN TALEPLER ── */}
+      {outgoingPending.length > 0 && (
+        <section>
+          <h3 className="text-base font-semibold mb-3 flex items-center gap-2 text-blue-600 dark:text-blue-400">
+            <ArrowLeftRight className="w-4 h-4" />
+            Gönderilen Talepler (Onay Bekliyor)
+            <span className="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{outgoingPending.length}</span>
+          </h3>
+          <RentalTable rows={outgoingPending} showActions />
+        </section>
+      )}
+
+      {/* ── AKTİF KİRALAMALAR ── */}
+      <section>
+        <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <Truck className="w-4 h-4 text-emerald-600" /> Aktif Kiralamalar
+        </h3>
+        {activeRentals.length > 0
+          ? <RentalTable rows={activeRentals} showActions />
+          : <EmptyState text="Şu an aktif kiralama bulunmuyor." />
+        }
+      </section>
+
+      {/* ── GEÇMİŞ ── */}
+      <section>
+        <h3 className="text-base font-semibold mb-3 text-muted-foreground">Geçmiş Kiralamalar</h3>
+        {pastRentals.length > 0
+          ? <RentalTable rows={pastRentals} />
+          : <EmptyState text="Henüz tamamlanmış kiralama bulunmuyor." />
+        }
+      </section>
+
+      {/* ── YENİ TALEP FORMU ── */}
+      <FormDialog open={showForm} onClose={() => setShowForm(false)} title="Kiralama Talebi Gönder" onSubmit={handleSendRequest} wide>
+        <div className="space-y-5">
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4 text-sm text-blue-700 dark:text-blue-300">
+            <strong>Nasıl çalışır?</strong> Talep gönderdiğinizde karşı şirket bildirim alır. Onaylarsa araç kiralanmış olur. Reddederse talep iptal edilir.
           </div>
-          
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Araç Sahibi Şirket *">
-              <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.ownerCompanyId} onChange={e => {
-                const oId = e.target.value;
-                setForm({ ...form, ownerCompanyId: oId, vehiclePlate: "", dynamicPrice: 0 });
-                fetchAvailable(oId);
-              }}>
-                <option value="">Sec...</option>
-                {liveCompanies.filter(c => c.id !== currentCompany.id).map(c => <option key={c.id} value={c.id}>{c.companyName || c.name}</option>)}
+              <select
+                className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm"
+                value={form.ownerCompanyId}
+                onChange={e => {
+                  const oId = e.target.value;
+                  setForm({ ...form, ownerCompanyId: oId, vehiclePlate: "", dynamicPrice: 0 });
+                  fetchAvailable(oId);
+                }}
+              >
+                <option value="">Şirket seçiniz...</option>
+                {liveCompanies.filter(c => c.id !== currentCompany.id).map(c => (
+                  <option key={c.id} value={c.id}>{c.companyName || c.name}</option>
+                ))}
               </select>
             </Field>
+
             <Field label="Araç Plakası *">
-              <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm" value={form.vehiclePlate} onChange={e => handlePlateChange(e.target.value)}>
-                <option value="">Seç...</option>
-                {availableVehicles.map((v: any) => <option key={v.id || v.plate} value={v.plate}>{v.plate} - Günlük ₺{(v.baseRentPrice || 0).toLocaleString("tr-TR")}</option>)}
+              <select
+                className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm"
+                value={form.vehiclePlate}
+                onChange={e => { setForm(p => ({ ...p, vehiclePlate: e.target.value })); calculatePrice(e.target.value, 1); }}
+                disabled={!form.ownerCompanyId}
+              >
+                <option value="">Araç seçiniz...</option>
+                {availableVehicles.map((v: any) => (
+                  <option key={v.plate} value={v.plate}>{v.plate} — Günlük ₺{(v.baseRentPrice || 0).toLocaleString("tr-TR")}</option>
+                ))}
               </select>
+              {form.ownerCompanyId && availableVehicles.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">Bu şirkette uygun araç bulunamadı.</p>
+              )}
             </Field>
-            <Field label="Başlangıç Tarihi *"><Input type="date" value={form.startDate?.split('T')[0] || ""} onChange={e => setForm({ ...form, startDate: e.target.value })} /></Field>
-            <Field label="Bitiş Tarihi *"><Input type="date" value={form.endDate?.split('T')[0] || ""} onChange={e => setForm({ ...form, endDate: e.target.value })} /></Field>
-            <Field label={`Hesaplanan Tahmini Ücret (${form.rentalDays > 0 ? form.rentalDays + ' gün' : 'TL'})`}>
-              <Input type="number" readOnly value={form.dynamicPrice} className="bg-muted text-foreground font-bold text-lg" />
+
+            <Field label="Başlangıç Tarihi *">
+              <Input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} />
+            </Field>
+
+            <Field label="Bitiş Tarihi *">
+              <Input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} />
+            </Field>
+
+            <Field label={`Tahmini Ücret${form.rentalDays > 0 ? ` (${form.rentalDays} gün)` : ""}`}>
+              <Input type="number" readOnly value={form.dynamicPrice} className="bg-muted font-bold" />
             </Field>
           </div>
         </div>
       </FormDialog>
 
+      {/* ── İADE FORMU ── */}
       <ConfirmDialog
         open={!!returnItem}
         onClose={() => setReturnItem(null)}
-        onConfirm={handleReturnAction}
+        onConfirm={handleReturn}
         title="Aracı İade Et"
         message={
           <div className="space-y-4">
@@ -339,16 +431,16 @@ export function RentalsTab() {
             {returnItem && (
               <div className="text-sm bg-muted rounded-md p-3 space-y-1">
                 <p>Kiralama Başlangıç KM: <strong>{Number(returnItem.rentStartKm || 0).toLocaleString("tr-TR")} km</strong></p>
-                <p>Aracın Güncel KM: <strong>{Number(getVehicleKm(returnItem.vehiclePlate) || 0).toLocaleString("tr-TR")} km</strong></p>
+                <p>Aracın Mevcut KM: <strong>{Number(vehicleKm(returnItem.vehiclePlate)).toLocaleString("tr-TR")} km</strong></p>
               </div>
             )}
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Dönüş KM (Güncel Kilometre) *</label>
+              <label className="text-sm text-muted-foreground mb-1 block">Dönüş Kilometresi *</label>
               <Input
                 type="number"
-                placeholder={`Örn: ${Number(getVehicleKm(returnItem?.vehiclePlate) || 0) + 100}`}
+                placeholder="Güncel gösterge değeri"
                 value={form.returnKm || ""}
-                onChange={e => setForm({ ...form, returnKm: Number(e.target.value) })}
+                onChange={e => setForm(p => ({ ...p, returnKm: Number(e.target.value) }))}
               />
             </div>
           </div>

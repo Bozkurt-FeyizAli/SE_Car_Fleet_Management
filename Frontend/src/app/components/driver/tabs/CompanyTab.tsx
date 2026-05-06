@@ -60,7 +60,12 @@ export function CompanyTab({ user }: { user?: any }) {
         <InfoCard icon={Phone} label="Telefon" value={driverCompany.contactPhone || "Kayıtlı Değil"} />
         <InfoCard icon={MapPin} label="Adres" value={driverCompany.address || "Kayıtlı Değil"} />
         <InfoCard icon={Globe} label="Website" value={driverCompany.website || "Kayıtlı Değil"} />
-        <InfoCard icon={Shield} label="Durum" value={<StatusBadge label={driverCompany.isActive ? "Aktif" : "Pasif"} variant={driverCompany.isActive ? "success" : "neutral"} />} />
+        <InfoCard icon={Shield} label="Durum" value={(() => {
+          const s = (user?.driverTripStatus || "").toLowerCase();
+          if (s === "intrip" || s === "seferde" || s === "on_trip") return <StatusBadge label="Seferde" variant="info" />;
+          if (s === "inactive" || s === "pasif") return <StatusBadge label="Pasif" variant="neutral" />;
+          return <StatusBadge label="Aktif" variant="success" />;
+        })()} />
       </div>
     </div>
   );

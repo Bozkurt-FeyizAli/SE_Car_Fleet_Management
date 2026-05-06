@@ -30,6 +30,14 @@ export const generatePhone = () => {
   const end2 = Math.floor(10 + Math.random() * 89);
   return `0${provider} ${mid} ${end1} ${end2}`;
 };
+
+export const generateName = () => {
+  const firstNames = ["Ahmet", "Mehmet", "Can", "Deniz", "Furkan", "Kadir", "Mustafa", "Murat", "Selim", "Burak"];
+  const lastNames = ["Yılmaz", "Kaya", "Demir", "Çelik", "Şahin", "Öztürk", "Aydın", "Arslan", "Doğan", "Yıldız"];
+  const f = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const l = lastNames[Math.floor(Math.random() * lastNames.length)];
+  return { first: f, last: l, email: `${f.toLowerCase()}.${l.toLowerCase()}@fleet.com` };
+};
 // ------------------------------------------
 
 export interface ApiUser {
@@ -75,6 +83,8 @@ export function DriversTab() {
   const [deleteItem, setDeleteItem] = useState<ApiUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [vehicles, setVehicles] = useState<ApiVehicle[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
 
   const getInitialForm = (): ApiUser => ({
     roleId: null,
@@ -97,15 +107,24 @@ export function DriversTab() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const [usersRes, driversRes] = await Promise.all([
+      const [usersRes, driversRes, companiesRes] = await Promise.all([
         fetch("/api/User"),
-        fetch("/api/Drivers")
+        fetch("/api/Drivers"),
+        fetch("/api/v1/companies").catch(() => null)
       ]);
       if (!usersRes.ok) throw new Error("Kullanıcılar yüklenemedi");
       if (!driversRes.ok) throw new Error("Şoförler yüklenemedi");
       const usersList: any[] = await usersRes.json();
       const driversList: ApiDriverRecord[] = await driversRes.json();
       const driversByUserId = new Map<number, ApiDriverRecord>(driversList.map(d => [d.userId, d]));
+      
+      setAllUsers(usersList);
+      if (companiesRes && companiesRes.ok) {
+        try {
+          const cList = await companiesRes.json();
+          setCompanies(Array.isArray(cList) ? cList : []);
+        } catch(e) {}
+      }
 
       const driversOnly = usersList.filter((u: any) => {
         const rid = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
@@ -145,10 +164,15 @@ export function DriversTab() {
   }, []);
 
   const openAdd = () => {
+    const randomUser = generateName();
     setForm({
       ...getInitialForm(),
+      firstName: randomUser.first,
+      lastName: randomUser.last,
+      email: randomUser.email,
       tcIdentityNumber: generateTCNo(),
       driverLicenseId: generateLicenseNo(),
+      phone: generatePhone(),
       phoneNumber: generatePhone(),
     });
     setEditItem(null);
@@ -156,7 +180,9 @@ export function DriversTab() {
   };
 
   const openEdit = (item: ApiUser) => {
-    setForm({ ...item, passwordHash: "" }); // Şifreyi güvenlik gereği boş gösteriyoruz
+    // Unify phone fields
+    const unifiedPhone = item.phoneNumber || item.phone || "";
+    setForm({ ...item, phone: unifiedPhone, phoneNumber: unifiedPhone, passwordHash: "" }); 
     setEditItem(item);
     setShowForm(true);
   };
@@ -318,19 +344,25 @@ export function DriversTab() {
         return <span className={score >= 80 ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-600"}>{score}</span>;
       } 
     },
-    { key: "vehicle", header: "Araç", render: (d) => {
-        const localVehicleIdStr = localStorage.getItem(`driver_vehicle_${d.id}`);
-        const vId = d.assignedVehicleId || (localVehicleIdStr ? Number(localVehicleIdStr) : null);
-        if (!vId) return "—";
-        const v = vehicles.find(x => x.id === vId);
-        return v ? v.plate : vId;
-      } 
+    { key: "vehicle", header: "Araç", render: (d) => d.assignedVehiclePlate || "—" },
+    { key: "company", header: "Şirket", render: (d) => {
+        const c = companies.find(x => x.id === d.companyId);
+        return c ? (c.companyName || c.name) : (d.companyId || "—");
+      }
     },
     { key: "status", header: "Durum", render: (d) => {
-        const status = d.driverTripStatus || "inactive";
-        const variant = status === "active" ? "success" : status === "on_trip" ? "info" : "neutral";
-        const label = status === "active" ? "Aktif" : status === "on_trip" ? "Seferde" : "Pasif";
-        return <StatusBadge label={label} variant={variant} />;
+        const status = d.driverTripStatus || "Inactive";
+        // Idle, active ve Boşta olanlar "Aktif" (Yeşil) gözükmeli
+        if (status === "Idle" || status === "active" || status === "Boşta") {
+          return <StatusBadge label="Aktif" variant="success" />;
+        }
+        // InTrip, on_trip ve Seferde olanlar "Seferde" (Mavi) gözükmeli
+        if (status === "InTrip" || status === "on_trip" || status === "Seferde") {
+          return <StatusBadge label="Seferde" variant="info" />;
+        }
+        // Diğerleri (Inactive, OnLeave vb.) "Pasif" veya kendi ismiyle (Gri)
+        const label = status === "OnLeave" || status === "İzinli" ? "İzinli" : "Pasif";
+        return <StatusBadge label={label} variant="neutral" />;
       }
     },
   ];
@@ -358,13 +390,33 @@ export function DriversTab() {
           <Field label="TC Kimlik No"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
           <Field label="Sicil Kaydı (Criminal Record)"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
           <Field label="Ehliyet No *"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
-          <Field label="Rol">
-            <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="2">
-              <option value="2">Şoför (Driver)</option>
+          <Field label="Şirket *">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={form.companyId || ""} 
+              onChange={e => setForm({ ...form, companyId: Number(e.target.value), parentUserId: null })}
+            >
+              <option value="">Şirket Seçiniz...</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>{c.companyName || c.name}</option>
+              ))}
             </select>
           </Field>
-          <Field label="Şirket ID *"><Input type="number" value={form.companyId || ""} onChange={e => setForm({ ...form, companyId: Number(e.target.value) })} /></Field>
-          <Field label="Bağlı Yönetici ID"><Input type="number" value={form.parentUserId || ""} onChange={e => setForm({ ...form, parentUserId: Number(e.target.value) })} /></Field>
+          <Field label="Bağlı Yönetici">
+            <select 
+              className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-foreground" 
+              value={form.parentUserId || ""} 
+              onChange={e => setForm({ ...form, parentUserId: Number(e.target.value) })}
+            >
+              <option value="">Yönetici Seçiniz...</option>
+              {allUsers.filter(u => {
+                const rid = u.roleId !== undefined && u.roleId !== null ? u.roleId : u.role;
+                return rid === 1 && (!form.companyId || u.companyId === Number(form.companyId));
+              }).map(m => (
+                <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>
+              ))}
+            </select>
+          </Field>
           <Field label="Sürücü Puanı"><Input type="number" value={form.driverScore || 0} onChange={e => setForm({ ...form, driverScore: Number(e.target.value) })} /></Field>
           <Field label="Araç Plakası">
             <select
@@ -373,9 +425,28 @@ export function DriversTab() {
               onChange={e => setForm({ ...form, assignedVehiclePlate: e.target.value })}
             >
               <option value="">Atanmadı</option>
-              {vehicles.map(v => (
-                <option key={v.plate} value={v.plate}>{v.plate}</option>
-              ))}
+              {(() => {
+                // Halihazırda başka şoförlere atanmış plakaları bul (düzenlenen şoför hariç)
+                const assignedPlates = new Set(
+                  data
+                    .filter(d => d.id !== editItem?.id)
+                    .map(d => d.assignedVehiclePlate)
+                    .filter(Boolean)
+                );
+
+                return vehicles
+                  .filter(v => {
+                    const isMyCompany = !form.companyId || v.companyId === Number(form.companyId);
+                    const isAvailable = v.isActive && !assignedPlates.has(v.plate);
+                    // Düzenleme modundaysak, şoförün kendi aracını her zaman göster
+                    const isCurrentVehicle = editItem && v.plate === editItem.assignedVehiclePlate;
+                    
+                    return isMyCompany && (isAvailable || isCurrentVehicle);
+                  })
+                  .map(v => (
+                    <option key={v.plate} value={v.plate}>{v.plate}</option>
+                  ));
+              })()}
             </select>
           </Field>
           <Field label="Durum">

@@ -73,5 +73,77 @@ namespace Backend.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        [HttpPatch("{id}/approve")]
+        public async Task<IActionResult> ApproveRental(int id)
+        {
+            try
+            {
+                var result = await _rentalService.ApproveRentalAsync(id);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id}/reject")]
+        public async Task<IActionResult> RejectRental(int id)
+        {
+            try
+            {
+                var result = await _rentalService.RejectRentalAsync(id);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetRentalById(int id)
+        {
+            try
+            {
+                var rental = await _rentalService.GetRentalByIdAsync(id);
+                if (rental == null) return NotFound(new { message = "Rental not found" });
+                return Ok(rental);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateRental(int id, [FromBody] RentalRequest request)
+        {
+            try
+            {
+                var success = await _rentalService.UpdateRentalAsync(id, request);
+                if (!success) return NotFound(new { message = "Rental not found" });
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteRental(int id)
+        {
+            try
+            {
+                var success = await _rentalService.DeleteRentalAsync(id);
+                if (!success) return NotFound(new { message = "Rental not found" });
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }
