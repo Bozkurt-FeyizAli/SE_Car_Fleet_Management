@@ -4,7 +4,18 @@ import { StatusBadge } from "../../shared/StatusBadge";
 import { auditLogs, AuditLog, getUserName } from "../../../data/mockData";
 
 export function AuditLogsTab() {
-  const [data] = useState([...auditLogs].reverse());
+  const getLocalAuditLogs = () => {
+    try {
+      const stored = localStorage.getItem('fleet_audit_logs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return [...auditLogs, ...parsed].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      }
+    } catch(e) {}
+    return [...auditLogs].reverse();
+  };
+
+  const [data] = useState(getLocalAuditLogs());
 
   const getLogVariant = (type: string) => {
     if (type.includes("accident")) return "danger" as const;
@@ -19,7 +30,7 @@ export function AuditLogsTab() {
     { key: "date", header: "Tarih", render: (l) => new Date(l.created_at).toLocaleString("tr-TR") },
     { key: "type", header: "Islem Tipi", render: (l) => <StatusBadge label={l.action_type.replace(/_/g, " ")} variant={getLogVariant(l.action_type)} /> },
     { key: "desc", header: "Aciklama", render: (l) => <span className="max-w-xs truncate block">{l.description}</span> },
-    { key: "user", header: "Kullanici", render: (l) => getUserName(l.user_id) },
+    { key: "user", header: "Kullanici", render: (l) => l.user_id === -1 ? "Sürücü" : getUserName(l.user_id) },
   ];
 
   return (

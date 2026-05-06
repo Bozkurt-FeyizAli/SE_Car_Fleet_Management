@@ -8,7 +8,7 @@ import * as signalR from "@microsoft/signalr";
 import { ApiUser } from "./DriversTab";
 import { ApiVehicle } from "./VehiclesTab";
 import { apiFetch } from "../../../utils/api";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -42,6 +42,8 @@ export function DashboardTab() {
   const [globalTripRoutes, setGlobalTripRoutes] = useState<Record<number, [number, number][]>>({});
   const [globalTripPositions, setGlobalTripPositions] = useState<Record<number, [number, number]>>({});
   const [globalTripProgress, setGlobalTripProgress] = useState<Record<number, number>>({});
+
+  const [driverRecords, setDriverRecords] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = () => {
@@ -92,6 +94,11 @@ export function DashboardTab() {
       fetch("/api/User", { cache: "no-store" })
         .then(res => res.ok ? res.json() : [])
         .then(setUsers)
+        .catch(console.error);
+        
+      fetch("/api/Drivers", { cache: "no-store" })
+        .then(res => res.ok ? res.json() : [])
+        .then(setDriverRecords)
         .catch(console.error);
 
       fetch("/api/v1/vehicles", { cache: "no-store" })
@@ -281,35 +288,42 @@ export function DashboardTab() {
               const progress = globalTripProgress[tid] || 0;
 
               return (
-                <Marker key={tid} position={currentPos as [number, number]} icon={adminTruckDivIcon}>
-                  <Popup>
-                    <div className="text-sm p-1">
-                      <div className="bg-indigo-100 text-indigo-900 font-bold px-2 py-1 rounded inline-block mb-2 text-xs border border-indigo-200">
-                        🏢 {trip.assignedCompanyName}
-                      </div>
-                      <br/>
-                      <strong>Araç Plaka:</strong> {trip.vehiclePlate} <br/>
-                      <strong>Sürücü ID:</strong> {trip.driverId} <br/>
-                      <strong>Çıkış:</strong> {startLoc.locationName} <br/>
-                      <strong>Varış:</strong> {endLoc ? endLoc.locationName : "Bilinmiyor"} <br/>
-                      
-                      <div className="mt-2">
-                        <strong>İlerleme:</strong> %{progress} tamamlandı
-                        <div className="w-full bg-slate-200 h-2 rounded mt-1 overflow-hidden">
-                          <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                <React.Fragment key={tid}>
+                  {globalTripRoutes[tid] && <Polyline positions={globalTripRoutes[tid] as [number, number][]} pathOptions={{ color: '#6366f1', weight: 4, opacity: 0.6 }} />}
+                  <Marker position={currentPos as [number, number]} icon={adminTruckDivIcon}>
+                    <Popup>
+                      <div className="text-sm p-1">
+                        <div className="bg-indigo-100 text-indigo-900 font-bold px-2 py-1 rounded inline-block mb-2 text-xs border border-indigo-200">
+                          🏢 {trip.assignedCompanyName}
                         </div>
-                      </div>
+                        <br/>
+                        <strong>Araç Plaka:</strong> {trip.vehiclePlate} <br/>
+                        <strong>Sürücü:</strong> {(() => {
+                          const driverRec = driverRecords.find(d => d.id === trip.driverId);
+                          const user = driverRec ? users.find(u => u.id === driverRec.userId) : null;
+                          return user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : "Bilinmiyor";
+                        })()} <br/>
+                        <strong>Çıkış:</strong> {startLoc.locationName} <br/>
+                        <strong>Varış:</strong> {endLoc ? endLoc.locationName : "Bilinmiyor"} <br/>
+                        
+                        <div className="mt-2">
+                          <strong>İlerleme:</strong> %{progress} tamamlandı
+                          <div className="w-full bg-slate-200 h-2 rounded mt-1 overflow-hidden">
+                            <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                          </div>
+                        </div>
 
-                      <span className="text-xs text-blue-600 mt-2 font-medium flex items-center gap-1">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        <span className="text-xs text-blue-600 mt-2 font-medium flex items-center gap-1">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                          </span>
+                          Canlı GPS Sensörü Devrede
                         </span>
-                        Canlı GPS Sensörü Devrede
-                      </span>
-                    </div>
-                  </Popup>
-                </Marker>
+                      </div>
+                    </Popup>
+                  </Marker>
+                </React.Fragment>
               );
             })}
           </MapContainer>

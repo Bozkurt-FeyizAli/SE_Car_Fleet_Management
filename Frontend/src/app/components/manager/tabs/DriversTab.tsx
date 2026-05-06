@@ -56,9 +56,12 @@ export interface ApiUser {
   assignedVehiclePlate?: string | null;
   assignedVehicleId?: number | null;
   // --- YENİ: Manager verileri ---
+  userId?: number;
   managerId?: number;
+  departmentId?: number;
   departmentName?: string;
   officeNumber?: string;
+  permissionIds?: number[];
 }
 
 interface ApiDriverRecord {
@@ -267,8 +270,17 @@ export function DriversTab() {
     // Önceden atanan veya locale kaydedilen plakayı al
     const localVehiclePlate = localStorage.getItem(`driver_vehicle_plate_${item.id}`);
     const assignedPlate = item.assignedVehiclePlate || localVehiclePlate || "";
+    
+    const localTc = localStorage.getItem(`user_tc_${item.id}`);
+    const localCriminal = localStorage.getItem(`user_criminal_${item.id}`);
 
-    setForm({ ...item, passwordHash: "", assignedVehiclePlate: assignedPlate }); // Şifreyi güvenlik gereği boş gösteriyoruz
+    setForm({ 
+      ...item, 
+      passwordHash: "", 
+      assignedVehiclePlate: assignedPlate,
+      tcIdentityNumber: item.tcIdentityNumber || localTc || "",
+      criminalRecord: item.criminalRecord || localCriminal || ""
+    }); // Şifreyi güvenlik gereği boş gösteriyoruz
     setEditItem(item);
     setShowForm(true);
   };
@@ -337,6 +349,9 @@ export function DriversTab() {
       }
 
       if (!newId) throw new Error("Şoför kullanıcısı kimliği alınamadı");
+
+      localStorage.setItem(`user_tc_${newId}`, form.tcIdentityNumber || "");
+      localStorage.setItem(`user_criminal_${newId}`, form.criminalRecord || "");
 
       if (!existingDriverId) {
         const driversRes = await fetch("/api/Drivers");
@@ -569,7 +584,17 @@ export function DriversTab() {
           <Field label="Şifre"><Input type="password" placeholder="***" value={form.passwordHash || ""} onChange={e => setForm({ ...form, passwordHash: e.target.value })} /></Field>
           <Field label="Telefon"><Input value={form.phoneNumber || ""} onChange={e => setForm({ ...form, phoneNumber: e.target.value })} /></Field>
           <Field label="Tc (TC Kimlik No)"><Input value={form.tcIdentityNumber || ""} onChange={e => setForm({ ...form, tcIdentityNumber: e.target.value })} /></Field>
-          <Field label="Sicil Kaydı"><Input value={form.criminalRecord || ""} onChange={e => setForm({ ...form, criminalRecord: e.target.value })} /></Field>
+          <Field label="Sicil Kaydı">
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={form.criminalRecord || ""}
+              onChange={e => setForm({ ...form, criminalRecord: e.target.value })}
+            >
+              <option value="">Seçiniz...</option>
+              <option value="Temiz">Temiz</option>
+              <option value="Sicilli">Sicilli</option>
+            </select>
+          </Field>
           <Field label="Ehliyet No *"><Input value={form.driverLicenseId || ""} onChange={e => setForm({ ...form, driverLicenseId: e.target.value })} /></Field>
           <Field label="Rol">
             <select className="w-full h-9 rounded-md border border-border bg-input-background px-3 text-sm text-slate-500" disabled value="2">

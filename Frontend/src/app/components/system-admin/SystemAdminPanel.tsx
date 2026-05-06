@@ -11,10 +11,15 @@ import { VehiclesTab } from "./tabs/VehiclesTab";
 import { RentalsTab } from "./tabs/RentalsTab";
 import { AuditLogsTab } from "./tabs/AuditLogsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { DepartmentsTab } from "../manager/tabs/DepartmentsTab";
+import { PermissionsTab } from "./tabs/PermissionsTab";
+import { ShieldAlert } from "lucide-react";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "companies", label: "Sirketler", icon: Building2 },
+  { id: "departments", label: "Departmanlar", icon: Building2 },
+  { id: "permissions", label: "Yetkiler", icon: ShieldAlert },
   { id: "users", label: "Kullanicilar", icon: Users },
   { id: "drivers", label: "Soforler", icon: Truck },
   { id: "vehicles", label: "Araclar", icon: Car },
@@ -77,6 +82,8 @@ export function SystemAdminPanel() {
       <div className="p-3 sm:p-6 pb-20 sm:pb-6">
         {activeTab === "dashboard" && <DashboardTab />}
         {activeTab === "companies" && <CompaniesTab />}
+        {activeTab === "departments" && <DepartmentsTab />}
+        {activeTab === "permissions" && <PermissionsTab />}
         {activeTab === "users" && <UsersTab />}
         {activeTab === "drivers" && <DriversTab />}
         {activeTab === "vehicles" && <VehiclesTab />}

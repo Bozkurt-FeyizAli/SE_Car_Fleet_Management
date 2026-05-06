@@ -69,14 +69,53 @@ export function QuickActionsTab() {
 
 function MaintenanceSection() {
   const driverVehicle = vehicles.find(v => v.current_driver_id === currentDriver.id);
-  const myRequests = () => maintenanceRequests.filter(r => r.driver_id === currentDriver.id);
+  const getLocalRequests = (): MaintenanceRequest[] => {
+    try {
+      const stored = localStorage.getItem('fleet_maintenance_requests');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return maintenanceRequests;
+  };
+
+  const myRequests = () => getLocalRequests().filter((r: MaintenanceRequest) => r.driver_id === currentDriver.id);
   const [data, setData] = useState(myRequests());
   const [form, setForm] = useState({ type: "Periyodik Bakim", description: "", urgency: "medium" as MaintenanceRequest["urgency"] });
 
   const handleSubmit = () => {
     if (!form.description) { toast.error("Aciklama girin"); return; }
-    maintenanceRequests.push({ id: nextId(), driver_id: currentDriver.id, vehicle_id: driverVehicle?.id ?? 0, ...form, status: "pending", created_at: new Date().toISOString() });
-    setData(myRequests());
+    
+    const currentReqs = getLocalRequests();
+    const newId = currentReqs.length > 0 ? Math.max(...currentReqs.map(r => r.id)) + 1 : nextId();
+    
+    const newReq: MaintenanceRequest = { 
+      id: newId, 
+      driver_id: currentDriver.id, 
+      vehicle_id: driverVehicle?.id ?? 0, 
+      ...form, 
+      status: "pending", 
+      created_at: new Date().toISOString() 
+    };
+    
+    const updated = [...currentReqs, newReq];
+    localStorage.setItem('fleet_maintenance_requests', JSON.stringify(updated));
+    
+    // Add to Audit logs
+    try {
+      const storedAudit = localStorage.getItem('fleet_audit_logs');
+      const auditArr = storedAudit ? JSON.parse(storedAudit) : [];
+      const validIds = auditArr.map((a: any) => a.id).filter((id: number) => id < 1000000);
+      const nextAuditId = validIds.length > 0 ? Math.max(...validIds) + 1 : 20;
+      auditArr.push({
+        id: nextAuditId,
+        user_id: -1,
+        action_type: "bakim_talebi",
+        description: `${form.type} talebi olusturuldu.`,
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem('fleet_audit_logs', JSON.stringify(auditArr));
+    } catch(e) {}
+
+    setData(updated.filter((r: MaintenanceRequest) => r.driver_id === currentDriver.id));
     setForm({ type: "Periyodik Bakim", description: "", urgency: "medium" });
     toast.success("Bakim talebi gonderildi");
   };
@@ -128,7 +167,26 @@ function IssueSection() {
           </select>
         </Field>
         <Field label="Detayli Aciklama"><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Sorunu detayli aciklayin..." rows={4} /></Field>
-        <Button onClick={() => { toast.success("Sorun bildirimi gonderildi"); setForm({ title: "", description: "", priority: "medium" }); }}>
+        <Button onClick={() => { 
+          // Add to Audit logs
+          try {
+            const storedAudit = localStorage.getItem('fleet_audit_logs');
+            const auditArr = storedAudit ? JSON.parse(storedAudit) : [];
+            const validIds = auditArr.map((a: any) => a.id).filter((id: number) => id < 1000000);
+            const nextAuditId = validIds.length > 0 ? Math.max(...validIds) + 1 : 20;
+            auditArr.push({
+              id: nextAuditId,
+              user_id: -1,
+              action_type: "sorun_bildirimi",
+              description: `Oncelik ${form.priority}: ${form.title}`,
+              created_at: new Date().toISOString()
+            });
+            localStorage.setItem('fleet_audit_logs', JSON.stringify(auditArr));
+          } catch(e) {}
+
+          toast.success("Sorun bildirimi gonderildi"); 
+          setForm({ title: "", description: "", priority: "medium" }); 
+        }}>
           <AlertCircle className="w-4 h-4" /> Bildir
         </Button>
       </CardContent>
@@ -167,20 +225,54 @@ function DocumentsSection() {
 
 function DailyCheckSection() {
   const driverVehicle = vehicles.find(v => v.current_driver_id === currentDriver.id);
-  const myChecks = () => dailyChecks.filter(c => c.driver_id === currentDriver.id);
+  const getLocalChecks = (): DailyCheck[] => {
+    try {
+      const stored = localStorage.getItem('fleet_daily_checks');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return dailyChecks;
+  };
+
+  const myChecks = () => getLocalChecks().filter((c: DailyCheck) => c.driver_id === currentDriver.id);
   const [data, setData] = useState(myChecks());
   const [form, setForm] = useState({ tire: "good" as DailyCheck["tire_condition"], brake: "good" as DailyCheck["brake_condition"], light: "good" as DailyCheck["light_condition"], oil: "good" as DailyCheck["oil_level"], fuel: "100", mileage: "", notes: "" });
 
   const handleSubmit = () => {
     if (!form.mileage) { toast.error("Kilometre bilgisini girin"); return; }
-    dailyChecks.push({
-      id: nextId(), driver_id: currentDriver.id, vehicle_id: driverVehicle?.id ?? 0,
+    
+    const currentChecks = getLocalChecks();
+    const newId = currentChecks.length > 0 ? Math.max(...currentChecks.map(r => r.id)) + 1 : nextId();
+
+    const newCheck: DailyCheck = {
+      id: newId, 
+      driver_id: currentDriver.id, 
+      vehicle_id: driverVehicle?.id ?? 0,
       date: new Date().toISOString().slice(0, 10),
       tire_condition: form.tire, brake_condition: form.brake, light_condition: form.light, oil_level: form.oil,
       fuel_level: Number(form.fuel), mileage: Number(form.mileage), notes: form.notes,
       created_at: new Date().toISOString(),
-    });
-    setData(myChecks());
+    };
+    
+    const updated = [...currentChecks, newCheck];
+    localStorage.setItem('fleet_daily_checks', JSON.stringify(updated));
+
+    // Add to Audit logs
+    try {
+      const storedAudit = localStorage.getItem('fleet_audit_logs');
+      const auditArr = storedAudit ? JSON.parse(storedAudit) : [];
+      const validIds = auditArr.map((a: any) => a.id).filter((id: number) => id < 1000000);
+      const nextAuditId = validIds.length > 0 ? Math.max(...validIds) + 1 : 20;
+      auditArr.push({
+        id: nextAuditId,
+        user_id: -1,
+        action_type: "gunluk_kontrol",
+        description: `Gunluk kontrol yapildi. KM: ${form.mileage}`,
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem('fleet_audit_logs', JSON.stringify(auditArr));
+    } catch(e) {}
+
+    setData(updated.filter((c: DailyCheck) => c.driver_id === currentDriver.id));
     setForm({ tire: "good", brake: "good", light: "good", oil: "good", fuel: "100", mileage: "", notes: "" });
     toast.success("Gunluk kontrol kaydedildi");
   };

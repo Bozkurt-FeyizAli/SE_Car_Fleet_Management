@@ -112,6 +112,16 @@ function MapEventsHandler({ onLocationSelect, mapCenter }: { onLocationSelect: (
   return null;
 }
 
+function generateAddress(f: any) {
+  const parts = [];
+  if (f.neighborhood) parts.push(`${f.neighborhood} Mah.`);
+  if (f.street) parts.push(f.street);
+  if (f.buildingType) parts.push(f.buildingType);
+  if (f.doorNo) parts.push(`No: ${f.doorNo}`);
+  if (f.district || f.city) parts.push(`${f.district}/${f.city}`.replace(/^\/|\/$/g, ''));
+  return parts.join(" ");
+}
+
 export function LocationsTab() {
   const [data, setData] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -120,10 +130,17 @@ export function LocationsTab() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([41.0082, 28.9784]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [citiesList, setCitiesList] = useState<any[]>([]);
+  const [districtsList, setDistrictsList] = useState<any[]>([]);
+  const [neighborhoodsList, setNeighborhoodsList] = useState<any[]>([]);
   const [form, setForm] = useState({
     locationName: "",
     city: "",
     district: "",
+    neighborhood: "",
+    street: "",
+    buildingType: "",
+    doorNo: "",
     fullAddress: ""
   });
   const [editItem, setEditItem] = useState<any>(null);
@@ -150,8 +167,19 @@ export function LocationsTab() {
     }
   };
 
+  const fetchCities = async () => {
+    try {
+      const res = await fetch("https://turkiyeapi.dev/api/v1/provinces");
+      const json = await res.json();
+      setCitiesList(json.data || []);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchCities();
   }, []);
 
   const handleMapClick = async (latlng: L.LatLng) => {
@@ -166,13 +194,39 @@ export function LocationsTab() {
       
       const cityStr = data.address?.province || data.address?.city || data.address?.state || "";
       const distStr = data.address?.town || data.address?.suburb || data.address?.village || data.address?.city_district || "";
+      const neighborhoodStr = data.address?.neighbourhood || data.address?.quarter || "";
+      const streetStr = data.address?.road || data.address?.pedestrian || "";
+      const doorNoStr = data.address?.house_number || "";
       
-      setForm(prev => ({
-        ...prev,
-        city: cityStr,
-        district: distStr,
-        fullAddress: data.display_name || ""
-      }));
+      setForm(prev => {
+        const updated = {
+          ...prev,
+          city: cityStr,
+          district: distStr,
+          neighborhood: neighborhoodStr,
+          street: streetStr,
+          doorNo: doorNoStr,
+        };
+        updated.fullAddress = data.display_name || generateAddress(updated);
+        return updated;
+      });
+      
+      setCitiesList(cities => {
+        const matched = cities.find(c => c.name === cityStr);
+        if (matched) {
+          setDistrictsList(matched.districts || []);
+          const matchedDistrict = matched.districts?.find((d: any) => d.name === distStr);
+          if (matchedDistrict) {
+             fetch(`https://turkiyeapi.dev/api/v1/neighborhoods?districtId=${matchedDistrict.id}`)
+               .then(r => r.json())
+               .then(d => setNeighborhoodsList(d.data || []))
+               .catch(() => setNeighborhoodsList([]));
+          } else {
+             setNeighborhoodsList([]);
+          }
+        }
+        return cities;
+      });
     } catch(err) {
       console.error(err);
     }
@@ -187,6 +241,19 @@ export function LocationsTab() {
     } catch(err) {
       console.error(err);
     }
+  };
+
+  const geocodeAddress = async (addressStr: string) => {
+    if (!addressStr) return;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressStr)}&countrycodes=tr&limit=1`, { headers: { 'Accept-Language': 'tr' }});
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setSelectedLat(Number(data[0].lat));
+        setSelectedLng(Number(data[0].lon));
+        setMapCenter([Number(data[0].lat), Number(data[0].lon)]);
+      }
+    } catch(e) {}
   };
 
   const selectSearchResult = async (result: any) => {
@@ -208,13 +275,39 @@ export function LocationsTab() {
       
       const cityStr = data.address?.province || data.address?.city || data.address?.state || "";
       const distStr = data.address?.town || data.address?.suburb || data.address?.village || data.address?.city_district || "";
+      const neighborhoodStr = data.address?.neighbourhood || data.address?.quarter || "";
+      const streetStr = data.address?.road || data.address?.pedestrian || "";
+      const doorNoStr = data.address?.house_number || "";
       
-      setForm(prev => ({
-        ...prev,
-        city: cityStr,
-        district: distStr,
-        fullAddress: data.display_name || result.display_name || ""
-      }));
+      setForm(prev => {
+        const updated = {
+          ...prev,
+          city: cityStr,
+          district: distStr,
+          neighborhood: neighborhoodStr,
+          street: streetStr,
+          doorNo: doorNoStr,
+        };
+        updated.fullAddress = data.display_name || result.display_name || generateAddress(updated);
+        return updated;
+      });
+      
+      setCitiesList(cities => {
+        const matched = cities.find(c => c.name === cityStr);
+        if (matched) {
+          setDistrictsList(matched.districts || []);
+          const matchedDistrict = matched.districts?.find((d: any) => d.name === distStr);
+          if (matchedDistrict) {
+             fetch(`https://turkiyeapi.dev/api/v1/neighborhoods?districtId=${matchedDistrict.id}`)
+               .then(r => r.json())
+               .then(d => setNeighborhoodsList(d.data || []))
+               .catch(() => setNeighborhoodsList([]));
+          } else {
+             setNeighborhoodsList([]);
+          }
+        }
+        return cities;
+      });
     } catch(err) {
       console.error(err);
     }
@@ -236,7 +329,7 @@ export function LocationsTab() {
         address: {
           city: form.city,
           district: form.district || "",
-          neighborhood: "",
+          neighborhood: form.neighborhood || "",
           fullAddress: form.fullAddress,
           zipCode: ""
         }
@@ -259,7 +352,7 @@ export function LocationsTab() {
 
       setShowForm(false);
       setEditItem(null);
-      setForm({ locationName: "", city: "", district: "", fullAddress: "" });
+      setForm({ locationName: "", city: "", district: "", neighborhood: "", street: "", buildingType: "", doorNo: "", fullAddress: "" });
       fetchData();
     } catch (error: any) {
       toast.error("Hata: " + error.message);
@@ -342,7 +435,7 @@ export function LocationsTab() {
         columns={columns} 
         searchPlaceholder="Konum ara..." 
         searchKeys={["locationName"]} 
-        onAdd={() => { setEditItem(null); setForm({ locationName: "", city: "", district: "", fullAddress: "" }); setShowForm(true); }} 
+        onAdd={() => { setEditItem(null); setForm({ locationName: "", city: "", district: "", neighborhood: "", street: "", buildingType: "", doorNo: "", fullAddress: "" }); setDistrictsList([]); setNeighborhoodsList([]); setShowForm(true); }} 
         onEdit={async (d) => {
            setEditItem(d);
            setSelectedLat(d.latitude);
@@ -352,13 +445,36 @@ export function LocationsTab() {
            // Önce kayıtlı veriyi doldur
            const storedCity = d.address?.city || d.city || "";
            const storedDistrict = d.address?.district || d.district || "";
+           const storedNeighborhood = d.address?.neighborhood || "";
 
            setForm({
              locationName: d.locationName,
              city: storedCity,
              district: storedDistrict,
+             neighborhood: storedNeighborhood,
+             street: "",
+             buildingType: "",
+             doorNo: "",
              fullAddress: d.address?.fullAddress || d.fullAddress || ""
            });
+           
+           setCitiesList(cities => {
+             const matched = cities.find(c => c.name === storedCity);
+             if (matched) {
+               setDistrictsList(matched.districts || []);
+               const matchedDistrict = matched.districts?.find((dist: any) => dist.name === storedDistrict);
+               if (matchedDistrict) {
+                 fetch(`https://turkiyeapi.dev/api/v1/neighborhoods?districtId=${matchedDistrict.id}`)
+                   .then(r => r.json())
+                   .then(d => setNeighborhoodsList(d.data || []))
+                   .catch(() => setNeighborhoodsList([]));
+               } else {
+                 setNeighborhoodsList([]);
+               }
+             }
+             return cities;
+           });
+
            setShowForm(true);
 
            // Şehir/ilçe boşsa koordinattan reverse geocode ile doldur
@@ -371,11 +487,32 @@ export function LocationsTab() {
                const geo = await res.json();
                const cityStr = geo.address?.province || geo.address?.city || geo.address?.state || storedCity;
                const distStr = geo.address?.town || geo.address?.suburb || geo.address?.village || geo.address?.city_district || storedDistrict;
-               setForm(prev => ({
-                 ...prev,
-                 city: prev.city || cityStr,
-                 district: prev.district || distStr,
-               }));
+               setForm(prev => {
+                 const updated = {
+                   ...prev,
+                   city: prev.city || cityStr,
+                   district: prev.district || distStr,
+                 };
+                 updated.fullAddress = generateAddress(updated);
+                 return updated;
+               });
+               
+               setCitiesList(cities => {
+                 const matched = cities.find(c => c.name === (storedCity || cityStr));
+                 if (matched) {
+                   setDistrictsList(matched.districts || []);
+                   const matchedDistrict = matched.districts?.find((dist: any) => dist.name === (storedDistrict || distStr));
+                   if (matchedDistrict) {
+                     fetch(`https://turkiyeapi.dev/api/v1/neighborhoods?districtId=${matchedDistrict.id}`)
+                       .then(r => r.json())
+                       .then(d => setNeighborhoodsList(d.data || []))
+                       .catch(() => setNeighborhoodsList([]));
+                   } else {
+                     setNeighborhoodsList([]);
+                   }
+                 }
+                 return cities;
+               });
              } catch (err) {
                console.error("Reverse geocode hatası:", err);
              }
@@ -396,12 +533,108 @@ export function LocationsTab() {
             <Input value={form.locationName} onChange={e => setForm({ ...form, locationName: e.target.value })} />
           </Field>
           <Field label="Şehir *">
-            <Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+            <select 
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={form.city} 
+              onChange={e => {
+                const city = e.target.value;
+                const matchedCity = citiesList.find((c: any) => c.name === city);
+                setDistrictsList(matchedCity?.districts || []);
+                setNeighborhoodsList([]);
+                const updated = { ...form, city, district: "", neighborhood: "" };
+                updated.fullAddress = generateAddress(updated);
+                setForm(updated);
+                geocodeAddress(updated.fullAddress);
+              }}
+            >
+              <option value="">Seçiniz...</option>
+              {citiesList.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
           </Field>
           <Field label="İlçe">
-            <Input value={form.district} onChange={e => setForm({ ...form, district: e.target.value })} />
+            <select 
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={form.district} 
+              onChange={e => {
+                const district = e.target.value;
+                const matchedDistrict = districtsList.find((d: any) => d.name === district);
+                if (matchedDistrict) {
+                  fetch(`https://turkiyeapi.dev/api/v1/neighborhoods?districtId=${matchedDistrict.id}`)
+                    .then(r => r.json())
+                    .then(d => setNeighborhoodsList(d.data || []))
+                    .catch(() => setNeighborhoodsList([]));
+                } else {
+                  setNeighborhoodsList([]);
+                }
+                const updated = { ...form, district, neighborhood: "" };
+                updated.fullAddress = generateAddress(updated);
+                setForm(updated);
+                geocodeAddress(updated.fullAddress);
+              }}
+              disabled={!form.city}
+            >
+              <option value="">Seçiniz...</option>
+              {districtsList.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </select>
           </Field>
-          <Field label="Açık Adres *">
+          <Field label="Mahalle">
+            <select 
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={form.neighborhood} 
+              onChange={e => {
+                const updated = { ...form, neighborhood: e.target.value };
+                updated.fullAddress = generateAddress(updated);
+                setForm(updated);
+                geocodeAddress(updated.fullAddress);
+              }}
+              disabled={!form.district}
+            >
+              <option value="">Seçiniz...</option>
+              {neighborhoodsList.map((n: any) => <option key={n.id} value={n.name}>{n.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Cadde / Sokak">
+            <Input 
+              placeholder="Örn: İstiklal Cad. Gül Sok."
+              value={form.street} 
+              onChange={e => {
+                const updated = { ...form, street: e.target.value };
+                updated.fullAddress = generateAddress(updated);
+                setForm(updated);
+              }}
+              onBlur={() => geocodeAddress(form.fullAddress)}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Bina / Ev Tipi">
+              <select 
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={form.buildingType} 
+                onChange={e => {
+                  const updated = { ...form, buildingType: e.target.value };
+                  updated.fullAddress = generateAddress(updated);
+                  setForm(updated);
+                  geocodeAddress(updated.fullAddress);
+                }}
+              >
+                <option value="">Seçiniz...</option>
+                <option value="Apartman">Apartman</option>
+                <option value="Müstakil Ev">Müstakil Ev</option>
+                <option value="Plaza / İş Merkezi">Plaza / İş Merkezi</option>
+                <option value="Site">Site</option>
+                <option value="Depo / Tesis">Depo / Tesis</option>
+              </select>
+            </Field>
+            <Field label="Bina/Kapı No">
+              <Input value={form.doorNo} onChange={e => {
+                  const updated = { ...form, doorNo: e.target.value };
+                  updated.fullAddress = generateAddress(updated);
+                  setForm(updated);
+                  geocodeAddress(updated.fullAddress);
+                }} />
+            </Field>
+          </div>
+          <Field label="Oluşan Açık Adres *">
             <Input value={form.fullAddress} onChange={e => setForm({ ...form, fullAddress: e.target.value })} />
           </Field>
         </div>

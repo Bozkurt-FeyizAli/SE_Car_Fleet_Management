@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
-  LayoutDashboard, Users, Truck, Car, ArrowLeftRight, UserCog, Settings, ShoppingCart, CreditCard, FileText, Map
+  LayoutDashboard, Users, Truck, Car, ArrowLeftRight, UserCog, Settings, ShoppingCart, CreditCard, FileText, Map, Building2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DashboardTab } from "./tabs/DashboardTab";
@@ -13,17 +13,18 @@ import { PaymentsTab } from "./tabs/PaymentsTab";
 import { DocumentsTab } from "./tabs/DocumentsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { LocationsTab } from "./tabs/LocationsTab";
+import { DepartmentsTab } from "./tabs/DepartmentsTab";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "locations", label: "Konumlar", icon: Map },
+  { id: "departments", label: "Departmanlar", icon: Building2 },
   { id: "users", label: "Yoneticiler", icon: UserCog },
   { id: "drivers", label: "Soforler", icon: Truck },
   { id: "vehicles", label: "Araclar", icon: Car },
   { id: "rentals", label: "Kiralik", icon: ArrowLeftRight },
   { id: "orders", label: "Seferler", icon: ShoppingCart },
-  { id: "payments", label: "Odemeler", icon: CreditCard },
-  { id: "documents", label: "Belgeler", icon: FileText },
+
   { id: "settings", label: "Ayarlar", icon: Settings },
 ];
 
@@ -46,6 +47,7 @@ export const currentCompany = {
 export function ManagerPanel() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [userRole, setUserRole] = useState<number>(1);
   const navigate = useNavigate();
 
   // Dynamic User and Company State
@@ -67,7 +69,13 @@ export function ManagerPanel() {
         const decoded = JSON.parse(jsonPayload);
         // Extract email from standard JWT claims
         userEmail = decoded.email || decoded["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"] || decoded.unique_name || "";
-      } catch(e) { console.error("Token parse error", e); }
+
+        // Extract role
+        const roleClaim = decoded.role || decoded["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"];
+        if (roleClaim !== undefined) {
+          setUserRole(Number(roleClaim));
+        }
+      } catch (e) { console.error("Token parse error", e); }
     }
 
     const loadProfile = async () => {
@@ -85,8 +93,8 @@ export function ManagerPanel() {
         if (matchedUser) {
           const fullName = `${matchedUser.firstName || ''} ${matchedUser.lastName || ''}`.trim() || 'Adsız Yönetici';
           setAdminName(fullName);
-          setAdminInitials(fullName.substring(0,2).toUpperCase());
-          
+          setAdminInitials(fullName.substring(0, 2).toUpperCase());
+
           localStorage.setItem("managerUserId", String(matchedUser.id || 1));
           localStorage.setItem("managerUserName", fullName);
 
@@ -119,17 +127,19 @@ export function ManagerPanel() {
 
     loadProfile();
 
-    // Load permissions
+    // Load permissions and user role
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : null;
     const managerId = user?.id || 1; // fallback
+    if (user && user.role !== undefined) setUserRole(user.role);
+
     apiFetch(`/v1/managers/${managerId}/permissions`)
       .then(res => {
         const perms: string[] = Array.isArray(res) ? res : res?.permissions || res?.data || [];
         setPermissions(perms);
         localStorage.setItem('managerPermissions', JSON.stringify(perms));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   return (
@@ -168,18 +178,18 @@ export function ManagerPanel() {
       <div className="border-b border-border bg-card hidden sm:block">
         <div className="flex overflow-x-auto px-6">
           {tabs.map((tab) => {
+            if (tab.id === "departments" && userRole !== 0) return null;
             const Icon = tab.icon;
             return (
-               <button
-                 key={tab.id}
-                 onClick={() => setActiveTab(tab.id)}
-                 className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap text-sm font-medium ${
-                   activeTab === tab.id ? "border-blue-600 text-blue-600 bg-blue-50/50" : "border-transparent text-muted-foreground hover:text-foreground hover:bg-slate-50"
-                 }`}
-               >
-                 <Icon className="w-4 h-4" />
-                 {tab.label}
-               </button>
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap text-sm font-medium ${activeTab === tab.id ? "border-blue-600 text-blue-600 bg-blue-50/50" : "border-transparent text-muted-foreground hover:text-foreground hover:bg-slate-50"
+                  }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
             );
           })}
         </div>
@@ -189,6 +199,7 @@ export function ManagerPanel() {
       <div className="p-3 sm:p-6 pb-20 sm:pb-6">
         {activeTab === "dashboard" && <DashboardTab />}
         {activeTab === "locations" && <LocationsTab />}
+        {activeTab === "departments" && <DepartmentsTab />}
         {activeTab === "users" && <UsersTab />}
         {activeTab === "drivers" && <DriversTab />}
         {activeTab === "vehicles" && <VehiclesTab />}
@@ -203,14 +214,14 @@ export function ManagerPanel() {
       <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
         <div className="flex overflow-x-auto scrollbar-none">
           {tabs.map((tab) => {
+            if (tab.id === "departments" && userRole !== 0) return null;
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 min-w-[48px] flex flex-col items-center gap-0.5 px-1 py-2 transition-colors ${
-                  activeTab === tab.id ? "text-blue-600" : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex-1 min-w-[48px] flex flex-col items-center gap-0.5 px-1 py-2 transition-colors ${activeTab === tab.id ? "text-blue-600" : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 <Icon className="w-5 h-5" />
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap font-medium">{tab.label}</span>
