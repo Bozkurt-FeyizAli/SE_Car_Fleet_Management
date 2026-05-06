@@ -7,6 +7,7 @@ namespace Backend.DTOs
         public int Id { get; set; }
         public string VehiclePlate { get; set; } = string.Empty;
         public int RenterCompanyId { get; set; }
+        public int RentedCompanyId { get; set; }
         public int OwnerCompanyId { get; set; }
         public string OwnerCompanyName { get; set; } = string.Empty;
         public string RenterCompanyName { get; set; } = string.Empty;
@@ -16,6 +17,7 @@ namespace Backend.DTOs
         public DateTime? ReturnDate { get; set; }
         public decimal? TotalPrice { get; set; }
         public bool IsCompleted { get; set; }
+        public string Status { get; set; } = string.Empty;
 
         public RentalResponse() { }
 
@@ -24,8 +26,9 @@ namespace Backend.DTOs
             Id = rental.Id;
             VehiclePlate = rental.VehiclePlate;
             RenterCompanyId = rental.RenterCompanyId;
-            OwnerCompanyId = rental.Vehicle?.CompanyId ?? 0;
-            OwnerCompanyName = rental.Vehicle?.Company?.CompanyName ?? string.Empty;
+            RentedCompanyId = rental.RentedCompanyId;
+            OwnerCompanyId = rental.Vehicle?.CompanyId ?? rental.RentedCompanyId;
+            OwnerCompanyName = rental.Vehicle?.Company?.CompanyName ?? rental.RentedCompany?.CompanyName ?? string.Empty;
             RenterCompanyName = rental.RenterCompany?.CompanyName ?? string.Empty;
             StartDate = rental.StartDate;
             EndDate = rental.EndDate;
@@ -33,6 +36,7 @@ namespace Backend.DTOs
             ReturnDate = rental.ReturnDate;
             TotalPrice = rental.TotalPrice;
             IsCompleted = rental.IsCompleted;
+            Status = rental.Status;
         }
     }
 }
