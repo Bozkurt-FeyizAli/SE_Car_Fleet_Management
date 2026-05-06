@@ -9,25 +9,13 @@ import 'admin_vehicles_tab.dart';
 import 'admin_rentals_tab.dart';
 import 'admin_locations_tab.dart';
 import 'admin_trips_tab.dart';
+import 'admin_payments_tab.dart';
 import 'company_users_tab.dart';
-import 'company_orders_tab.dart';
-import 'company_payments_tab.dart';
-import 'company_documents_tab.dart';
+import 'company_departments_tab.dart';
 
-// ─── 10 tabs matching web ManagerPanel ─────────────────────────────────────
-const _tabs = [
-  (id: 'dashboard', label: 'Dashboard', icon: Icons.dashboard_rounded),
-  (id: 'users', label: 'Yöneticiler', icon: Icons.manage_accounts_rounded),
-  (id: 'drivers', label: 'Şoförler', icon: Icons.local_shipping_rounded),
-  (id: 'vehicles', label: 'Araçlar', icon: Icons.directions_car_rounded),
-  (id: 'rentals', label: 'Kiralık', icon: Icons.swap_horiz_rounded),
-  (id: 'locations', label: 'Depolar', icon: Icons.warehouse_rounded),
-  (id: 'trips', label: 'Seferler', icon: Icons.map_rounded),
-  (id: 'orders', label: 'Siparişler', icon: Icons.shopping_cart_rounded),
-  (id: 'payments', label: 'Ödemeler', icon: Icons.credit_card_rounded),
-  (id: 'docs', label: 'Belgeler', icon: Icons.description_rounded),
-  (id: 'settings', label: 'Ayarlar', icon: Icons.settings_rounded),
-];
+// ─── Base Tabs Definition ─────────────────────────────────────
+// The visible tabs will be generated dynamically based on permissions
+typedef TabInfo = ({String id, String label, IconData icon});
 
 // ═══════════════════════════════════════════════════════════════════════════
 class CompanyHomeScreen extends StatefulWidget {
@@ -44,6 +32,71 @@ class CompanyHomeScreen extends StatefulWidget {
 
 class _State extends State<CompanyHomeScreen> {
   int _idx = 0;
+  bool _loadingPerms = true;
+  Set<int> _myPerms = {};
+  List<TabInfo> _activeTabs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPerms();
+  }
+
+  Future<void> _loadPerms() async {
+    if (widget.user.role == UserRole.superAdmin) {
+      _myPerms = {1, 2, 3}; // Admin has all perms
+    } else {
+      try {
+        final api = ApiService();
+        final managers = await api.getManagers();
+        final myId = int.tryParse(widget.user.id);
+        final myManager = managers.cast<Map<String, dynamic>>().firstWhere(
+          (m) => m['userId'] == myId,
+          orElse: () => <String, dynamic>{},
+        );
+        
+        if (myManager.isNotEmpty) {
+          final mId = (myManager['id'] as num).toInt();
+          final mPerms = await api.getManagerPermissionLinks();
+          final perms = mPerms
+              .cast<Map<String, dynamic>>()
+              .where((p) => p['managerId'] == mId)
+              .map((p) => (p['permissionId'] as num).toInt())
+              .toSet();
+          _myPerms = perms;
+        }
+      } catch (_) {}
+    }
+    
+    _generateTabs();
+    if (mounted) setState(() => _loadingPerms = false);
+  }
+
+  void _generateTabs() {
+    final List<TabInfo> tabs = [
+      (id: 'dashboard', label: 'Dashboard', icon: Icons.dashboard_rounded),
+      (id: 'users', label: 'Yöneticiler', icon: Icons.manage_accounts_rounded),
+      (id: 'departments', label: 'Departmanlar', icon: Icons.folder_rounded),
+      (id: 'drivers', label: 'Şoförler', icon: Icons.local_shipping_rounded),
+      (id: 'vehicles', label: 'Araçlar', icon: Icons.directions_car_rounded),
+    ];
+
+    if (_myPerms.contains(3) || widget.user.role == UserRole.superAdmin) {
+      tabs.add((id: 'rentals', label: 'Kiralık', icon: Icons.swap_horiz_rounded));
+    }
+
+    if (_myPerms.contains(2) || widget.user.role == UserRole.superAdmin) {
+      tabs.add((id: 'payments', label: 'Ödemeler', icon: Icons.payment_rounded));
+    }
+
+    tabs.addAll([
+      (id: 'locations', label: 'Depolar', icon: Icons.warehouse_rounded),
+      (id: 'trips', label: 'Seferler', icon: Icons.map_rounded),
+      (id: 'settings', label: 'Ayarlar', icon: Icons.settings_rounded),
+    ]);
+
+    _activeTabs = tabs;
+  }
 
   void _logout() => Navigator.of(context).pushReplacement(
     MaterialPageRoute(
@@ -59,25 +112,32 @@ class _State extends State<CompanyHomeScreen> {
   }
 
   Widget _body() {
-    switch (_tabs[_idx].id) {
+    if (_loadingPerms) {
+      return const Center(child: CircularProgressIndicator(color: kBlue));
+    }
+    
+    if (_idx >= _activeTabs.length) _idx = 0;
+    
+    switch (_activeTabs[_idx].id) {
       case 'users':
-        return CompanyUsersTab(defaultCompanyId: widget.user.companyId ?? 1);
+        return CompanyUsersTab(companyId: widget.user.companyId);
+      case 'departments':
+        return CompanyDepartmentsTab(companyId: widget.user.companyId);
       case 'drivers':
-        return AdminDriversTab(defaultCompanyId: widget.user.companyId ?? 1);
+        return AdminDriversTab(companyId: widget.user.companyId);
       case 'vehicles':
-        return AdminVehiclesTab(user: widget.user);
+        return AdminVehiclesTab(
+          user: widget.user, 
+          hasVehiclePerm: _myPerms.contains(1) || widget.user.role == UserRole.superAdmin
+        );
       case 'rentals':
         return AdminRentalsTab(user: widget.user);
+      case 'payments':
+        return const AdminPaymentsTab();
       case 'locations':
         return AdminLocationsTab(user: widget.user);
       case 'trips':
         return AdminTripsTab(user: widget.user);
-      case 'orders':
-        return const CompanyOrdersTab();
-      case 'payments':
-        return const CompanyPaymentsTab();
-      case 'docs':
-        return const CompanyDocumentsTab();
       case 'settings':
         return const _CompanySettingsTab();
       default:
@@ -191,8 +251,8 @@ class _State extends State<CompanyHomeScreen> {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: List.generate(_tabs.length, (i) {
-                final t = _tabs[i];
+              children: List.generate(_activeTabs.length, (i) {
+                final t = _activeTabs[i];
                 final sel = _idx == i;
                 return GestureDetector(
                   onTap: () => setState(() => _idx = i),
@@ -213,7 +273,9 @@ class _State extends State<CompanyHomeScreen> {
                           style: TextStyle(
                             fontSize: 10,
                             color: sel ? kBlue : kMuted,
-                            fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: sel
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                           ),
                         ),
                       ],
@@ -241,7 +303,11 @@ class _CompanyDashboard extends StatefulWidget {
 
 class _DashState extends State<_CompanyDashboard> {
   final _api = ApiService();
-  List<Map<String, dynamic>> _drivers = [], _vehicles = [], _rentals = [];
+  List<Map<String, dynamic>> _drivers = [],
+      _vehicles = [],
+      _rentals = [],
+      _trips = [],
+      _managers = [];
   Map<String, dynamic>? _company;
   bool _loading = true;
 
@@ -258,24 +324,90 @@ class _DashState extends State<_CompanyDashboard> {
         _api.getUsers(),
         _api.getVehicles(),
         _api.getCompanies(),
+        _api.getAllRentals(),
+        _api.getDrivers(),
+        _api.getAllTrips(),
+        _api.getManagers(),
       ]);
       if (!mounted) return;
       final allUsers = results[0].cast<Map<String, dynamic>>();
+      final allVehicles = results[1].cast<Map<String, dynamic>>();
       final companies = results[2].cast<Map<String, dynamic>>();
+      final allRentals = results[3].cast<Map<String, dynamic>>();
+      final allDrivers = results[4].cast<Map<String, dynamic>>();
+      final allTrips = results[5].cast<Map<String, dynamic>>();
+      final allManagers = results[6].cast<Map<String, dynamic>>();
+
+      final uCid = widget.user.companyId;
+
+      // Combine driver + user data, filter by company
+      final combinedDrivers = allDrivers
+          .map((driver) {
+            final userId = driver['userId'];
+            final user = allUsers.firstWhere(
+              (u) => u['id'] == userId,
+              orElse: () => <String, dynamic>{},
+            );
+            return {
+              ...user,
+              ...driver,
+              'id': user['id'] ?? driver['userId'],
+              'driverId': driver['id'],
+            };
+          })
+          .where((d) => uCid == null || d['companyId'] == uCid)
+          .toList();
+
+      // Company vehicles + rented-in vehicles
+      final processedVehicles = <Map<String, dynamic>>[];
+      for (var v in allVehicles) {
+        final plate = v['plate'] ?? v['plateNumber'];
+        final activeRental = allRentals.where(
+          (r) => r['vehiclePlate'] == plate && r['isCompleted'] == false,
+        );
+        bool isRentedIn =
+            activeRental.isNotEmpty &&
+            activeRental.first['renterCompanyId'] == uCid;
+        if (uCid == null || v['companyId'] == uCid || isRentedIn) {
+          processedVehicles.add(v);
+        }
+      }
+
+      // Company's driver IDs for trip filtering
+      final companyDriverIds = combinedDrivers
+          .map((d) => d['driverId'])
+          .toSet();
+      final companyTrips = allTrips
+          .where((t) => companyDriverIds.contains(t['driverId']))
+          .toList();
+
+      // All managers (role=1) working at this company
+      final companyManagers = allUsers.where((u) {
+        final cid = (u['companyId'] as num?)?.toInt();
+        final r = (u['role'] as num?)?.toInt() ?? (u['roleId'] as num?)?.toInt();
+        return (uCid == null || cid == uCid) && r == 1;
+      }).toList();
+
       setState(() {
-        _drivers = allUsers
-            .where((u) => (u['roleId'] as num?)?.toInt() == 3)
+        _drivers = combinedDrivers;
+        _vehicles = processedVehicles;
+        _rentals = allRentals
+            .where(
+              (r) =>
+                  uCid == null ||
+                  r['renterCompanyId'] == uCid ||
+                  r['rentedCompanyId'] == uCid,
+            )
             .toList();
-        _vehicles = results[1].cast<Map<String, dynamic>>();
-        final uCid = widget.user.companyId;
+        _trips = companyTrips;
+        _managers = companyManagers;
+
         if (uCid != null) {
           final m = companies.where((c) => c['id'] == uCid);
-          _company = m.isNotEmpty ? m.first : (companies.isNotEmpty ? companies.first : null);
+          _company = m.isNotEmpty ? m.first : null;
         } else {
           _company = companies.isNotEmpty ? companies.first : null;
         }
-        // Rentals: try fetching separately if endpoint exists
-        _rentals = [];
         _loading = false;
       });
     } catch (_) {
@@ -283,26 +415,15 @@ class _DashState extends State<_CompanyDashboard> {
     }
   }
 
-  Color _scoreColor(int s) => s >= 80
-      ? kGreen
-      : s >= 60
-      ? Colors.orange
-      : Colors.red;
-
   @override
   Widget build(BuildContext context) {
-    final onTrip = _drivers
-        .where((d) => d['driverTripStatus'] == 'on_trip')
+    final activeTrips = _trips.where((t) => t['status'] != 'Completed').length;
+    final completedTrips = _trips
+        .where((t) => t['status'] == 'Completed')
         .length;
     final activeV = _vehicles.where((v) => v['isActive'] == true).length;
     final inactiveV = _vehicles.length - activeV;
-    final scores = _drivers.map(
-      (d) => (d['driverScore'] as num?)?.toInt() ?? 0,
-    );
-    final avgScore = _drivers.isEmpty
-        ? 0.0
-        : scores.reduce((a, b) => a + b) / _drivers.length;
-    final activeRent = _rentals.where((r) => r['status'] == 'active').length;
+    final activeRent = _rentals.where((r) => r['isCompleted'] == false).length;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -313,7 +434,7 @@ class _DashState extends State<_CompanyDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Company header — mirrors web "currentCompany.name + address + phone" ──
+            // ── Company header ──
             if (_company != null) ...[
               Text(
                 _company!['companyName'] ?? _company!['name'] ?? '',
@@ -353,7 +474,6 @@ class _DashState extends State<_CompanyDashboard> {
                 ),
               )
             else ...[
-              // ── 8 stat cards — mirrors web 4-column grid ──────────────────
               GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
@@ -366,50 +486,36 @@ class _DashState extends State<_CompanyDashboard> {
                     Icons.local_shipping_rounded,
                     'Şoförler',
                     _drivers.length,
-                    sub: '$onTrip seferde',
+                    sub:
+                        '${_drivers.where((d) => d['driverTripStatus'] == 'on_trip').length} seferde',
                     color: kGreen,
                   ),
                   _stat(
                     Icons.directions_car_rounded,
                     'Araçlar',
                     _vehicles.length,
-                    sub: '$activeV aktif',
+                    sub: '$activeV aktif · $inactiveV pasif',
                     color: kBlue,
                   ),
                   _stat(
-                    Icons.trending_up_rounded,
+                    Icons.map_rounded,
                     'Aktif Seferler',
-                    onTrip,
-                    sub: 'Ort. puan: ${avgScore.toStringAsFixed(1)}',
+                    activeTrips,
+                    sub: '$completedTrips tamamlanan',
                     color: const Color(0xFF7C3AED),
-                  ),
-                  _stat(
-                    Icons.shopping_cart_rounded,
-                    'Siparişler',
-                    0,
-                    sub: '0 beklemede',
-                    color: const Color(0xFFEA580C),
-                  ),
-                  _stat(
-                    Icons.credit_card_rounded,
-                    'Gelir',
-                    null,
-                    label2: '₺0',
-                    color: const Color(0xFF0D9488),
-                  ),
-                  _stat(
-                    Icons.credit_card_rounded,
-                    'Gider',
-                    null,
-                    label2: '₺0',
-                    color: const Color(0xFFEF4444),
                   ),
                   _stat(
                     Icons.swap_horiz_rounded,
                     'Kiralamalar',
                     activeRent,
-                    sub: 'aktif',
+                    sub: 'aktif kiralama',
                     color: const Color(0xFF0891B2),
+                  ),
+                  _stat(
+                    Icons.manage_accounts_rounded,
+                    'Yöneticiler',
+                    _managers.length,
+                    color: const Color(0xFFEA580C),
                   ),
                   _stat(
                     Icons.warning_amber_rounded,
@@ -419,112 +525,6 @@ class _DashState extends State<_CompanyDashboard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-
-              // ── Son Siparişler — mirrors web "Recent Orders" section ──────
-              const Text(
-                'Son Siparişler',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: kCard,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: kBorder),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(
-                    child: Text(
-                      'Bu şirkete ait sipariş bulunamadı.',
-                      style: TextStyle(color: kMuted, fontSize: 13),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Şoför Puanları — mirrors web "Driver Scores" section ──────
-              const Text(
-                'Şoför Puanları',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (_drivers.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: kCard,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: kBorder),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Şoför kaydı yok.',
-                      style: TextStyle(color: kMuted),
-                    ),
-                  ),
-                )
-              else
-                Column(
-                  children: _drivers.map((d) {
-                    final score = (d['driverScore'] as num?)?.toInt() ?? 0;
-                    final name =
-                        '${d['firstName'] ?? ''} ${d['lastName'] ?? ''}'.trim();
-                    final status = d['driverTripStatus'] ?? 'inactive';
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: kCard,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name.isEmpty ? '—' : name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                kBadge(
-                                  kStatusLabel(status),
-                                  kStatusColor(status),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '$score',
-                            style: TextStyle(
-                              color: _scoreColor(score),
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-
               const SizedBox(height: 80),
             ],
           ],

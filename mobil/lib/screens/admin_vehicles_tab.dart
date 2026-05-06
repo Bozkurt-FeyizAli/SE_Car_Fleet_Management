@@ -6,7 +6,14 @@ import 'vehicle_detail_screen.dart';
 
 class AdminVehiclesTab extends StatefulWidget {
   final UserModel user;
-  const AdminVehiclesTab({super.key, required this.user});
+  final bool hasVehiclePerm;
+  
+  const AdminVehiclesTab({
+    super.key, 
+    required this.user, 
+    this.hasVehiclePerm = true,
+  });
+  
   @override
   State<AdminVehiclesTab> createState() => _State();
 }
@@ -38,6 +45,7 @@ class _State extends State<AdminVehiclesTab> {
         _api.getVehicleRegistrations().catchError((_) => <dynamic>[]),
         _api.getDrivers().catchError((_) => <dynamic>[]),
         _api.getRentals().catchError((_) => <dynamic>[]),
+        _api.getAllTrips().catchError((_) => <dynamic>[]),
       ]);
       if (!mounted) return;
 
@@ -45,6 +53,9 @@ class _State extends State<AdminVehiclesTab> {
       final rList = (results[1] as List).cast<Map<String, dynamic>>();
       final dList = (results[2] as List).cast<Map<String, dynamic>>();
       final renList = (results[3] as List).cast<Map<String, dynamic>>();
+      final tripsList = (results[4] as List).cast<Map<String, dynamic>>();
+
+      final activeTripPlates = tripsList.where((t) => t['status'] != 'Completed').map((t) => t['vehiclePlate']).toSet();
 
       final rMap = {for (var r in rList) r['registrationNumber']: r};
       final myCompanyId = widget.user.companyId ?? 1;
@@ -77,18 +88,25 @@ class _State extends State<AdminVehiclesTab> {
 
         if (activeRentals.isNotEmpty) {
           final rental = activeRentals.first;
+          final status = rental['status'];
           if (rental['ownerCompanyId'] == myCompanyId && rental['renterCompanyId'] != myCompanyId) {
-            isRentedOut = true;
+            // Only mark as rented out if approved
+            if (status == 'Approved') {
+              isRentedOut = true;
+            }
           } else if (rental['renterCompanyId'] == myCompanyId && rental['ownerCompanyId'] != myCompanyId) {
-            isRentedIn = true;
+            // Only show rented-in if approved
+            if (status == 'Approved') {
+              isRentedIn = true;
+            }
           }
         }
 
         v['isRentedOut'] = isRentedOut;
         v['isRentedIn'] = isRentedIn;
-        v['isOnTrip'] = driver != null && driver['status'] == 'InTrip';
+        v['isOnTrip'] = activeTripPlates.contains(plate);
         
-        bool isMaintenance = v['isActive'] == false || ((v['currentKm'] as num?) ?? 0) >= ((v['nextMaintenanceKm'] as num?) ?? 999999);
+        bool isMaintenance = ((v['currentKm'] as num?) ?? 0) >= ((v['nextMaintenanceKm'] as num?) ?? 999999);
         v['isMaintenance'] = isMaintenance;
         
         v['isAvailable'] = !isRentedOut && !v['isOnTrip'] && !isMaintenance;
@@ -149,6 +167,7 @@ class _State extends State<AdminVehiclesTab> {
         builder: (context) => VehicleDetailScreen(
           user: widget.user,
           item: item,
+          hasEditPerm: widget.hasVehiclePerm,
         ),
       ),
     );
@@ -260,27 +279,28 @@ class _State extends State<AdminVehiclesTab> {
                                             ),
                                           ),
                                         ),
-                                        if (v['isRentedIn'] == true) ...[
-                                          kBadge('Kiralık Geldi', Colors.purple),
-                                          const SizedBox(width: 4),
-                                        ],
                                         if (v['isRentedOut'] == true) ...[
                                           kBadge('Kiralandı', Colors.orange),
-                                          const SizedBox(width: 4),
+                                        ] else ...[
+                                          if (v['isRentedIn'] == true) ...[
+                                            kBadge('Dışarıdan', Colors.purple),
+                                            const SizedBox(width: 4),
+                                          ],
+                                          if (v['isMaintenance'] == true) ...[
+                                            kBadge('Bakımda', Colors.redAccent),
+                                          ] else if (v['isOnTrip'] == true) ...[
+                                            kBadge('Seferde', Colors.blue),
+                                          ] else if (active || v['isRentedIn'] == true) ...[
+                                            kBadge('Müsait', Colors.green),
+                                          ] else ...[
+                                            kBadge('Mağaza Dışı', Colors.grey),
+                                          ],
                                         ],
-                                        if (v['isOnTrip'] == true) ...[
-                                          kBadge('Seferde', Colors.blue),
-                                          const SizedBox(width: 4),
-                                        ],
-                                        kBadge(
-                                          active ? 'Aktif' : 'Pasif',
-                                          active ? Colors.green : Colors.grey,
-                                        ),
                                       ],
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${v['brandModel'] ?? '—'}  ·  ${v['year'] ?? '—'}  ·  ${v['vehicleType'] ?? '—'}',
+                                      '${v['brandModel'] ?? '—'}  ·  ${v['year'] ?? '—'}  ·  ${v['vehicleType'] ?? '—'}  ·  ${v['currentKm'] ?? 0} km',
                                       style: const TextStyle(
                                         color: kMuted,
                                         fontSize: 12,
@@ -319,19 +339,20 @@ class _State extends State<AdminVehiclesTab> {
             ],
           ),
         ),
-        Positioned(
-          right: 16,
-          bottom: 24,
-          child: FloatingActionButton.extended(
-            backgroundColor: kBlue,
-            onPressed: () => _openDetail(),
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text(
-              'Araç Ekle',
-              style: TextStyle(color: Colors.white),
+        if (widget.hasVehiclePerm)
+          Positioned(
+            right: 16,
+            bottom: 24,
+            child: FloatingActionButton.extended(
+              backgroundColor: kBlue,
+              onPressed: () => _openDetail(),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Araç Ekle',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ),
-        ),
       ],
     );
   }

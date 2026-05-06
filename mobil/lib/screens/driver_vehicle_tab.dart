@@ -41,8 +41,18 @@ class _DriverVehicleTabState extends State<DriverVehicleTab> {
 
         final plate = driverRow?['vehiclePlate']?.toString();
         if (plate != null && plate.isNotEmpty) {
-          final v = await _api.getVehicle(plate);
-          if (mounted) setState(() => _vehicle = v as Map<String, dynamic>?);
+          final v = await _api.getVehicle(plate) as Map<String, dynamic>;
+          final regNum = v['registrationNumber'];
+          if (regNum != null && regNum.toString().isNotEmpty) {
+            try {
+              final reg = await _api.getVehicleRegistration(regNum.toString()) as Map<String, dynamic>;
+              v['brandModel'] = reg['brandModel'];
+              v['year'] = reg['year'];
+              v['vehicleType'] = reg['type'];
+              v['capacityKg'] = reg['capacity'];
+            } catch (_) {}
+          }
+          if (mounted) setState(() => _vehicle = v);
         }
       }
     } catch (_) {}
@@ -158,6 +168,7 @@ class _DriverVehicleTabState extends State<DriverVehicleTab> {
                   _row('Yıl', (_vehicle!['year'] ?? '—').toString()),
                   _row('Araç Tipi', _vehicle!['vehicleType'] ?? '—'),
                   _row('Kapasite', '${_vehicle!['capacityKg'] ?? 0} kg'),
+                  _row('Güncel KM', '${_vehicle!['currentKm'] ?? 0} km'),
                   const Divider(color: kBorder, height: 24),
                   const Align(
                     alignment: Alignment.centerLeft,

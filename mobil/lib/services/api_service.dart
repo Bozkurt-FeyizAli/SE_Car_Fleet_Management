@@ -166,42 +166,88 @@ class ApiService {
       get('/api/v1/rentals/all').then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
   Future<dynamic> createRentalRequest(Map<String, dynamic> data) =>
       post('/api/v1/rentals/request', data);
+
   Future<dynamic> returnRental(int id, Map<String, dynamic> data) =>
       patch('/api/v1/rentals/$id/return', data);
 
-  /// Fetches a single vehicle and updates its isActive flag, preserving all other fields.
-  Future<void> patchVehicleActive(String plate, bool isActive) async {
+  Future<dynamic> approveRental(int id) =>
+      patch('/api/v1/rentals/$id/approve', {});
+
+  Future<dynamic> rejectRental(int id) =>
+      patch('/api/v1/rentals/$id/reject', {});
+
+  /// Updates the isActive flag of a vehicle via GET+PUT.
+  Future<dynamic> patchVehicleActive(String plate, bool isActive) async {
     final v = await getVehicle(plate) as Map<String, dynamic>;
-    await updateVehicle(plate, {
+    return updateVehicle(plate, {
       'plate': v['plate'],
       'registrationNumber': v['registrationNumber'],
-      'currentKm': v['currentKm'],
-      'baseRentPrice': v['baseRentPrice'],
+      'currentKm': v['currentKm'] ?? 0,
+      'baseRentPrice': v['baseRentPrice'] ?? 0,
       'insuranceEndDate': v['insuranceEndDate'],
       'cascoEndDate': v['cascoEndDate'],
       'inspectionEndDate': v['inspectionEndDate'],
-      'nextMaintenanceKm': v['nextMaintenanceKm'],
+      'nextMaintenanceKm': v['nextMaintenanceKm'] ?? 0,
       'isActive': isActive,
       'companyId': v['companyId'],
+      'damageRecordAmount': v['damageRecordAmount'] ?? 0,
     });
   }
 
-  /// Fetches a single vehicle and updates its baseRentPrice, preserving all other fields.
-  Future<void> patchVehicleRentPrice(String plate, double price) async {
+  /// Updates the baseRentPrice of a vehicle via GET+PUT.
+  Future<dynamic> patchVehicleRentPrice(String plate, double price) async {
     final v = await getVehicle(plate) as Map<String, dynamic>;
-    await updateVehicle(plate, {
+    return updateVehicle(plate, {
       'plate': v['plate'],
       'registrationNumber': v['registrationNumber'],
-      'currentKm': v['currentKm'],
+      'currentKm': v['currentKm'] ?? 0,
       'baseRentPrice': price,
       'insuranceEndDate': v['insuranceEndDate'],
       'cascoEndDate': v['cascoEndDate'],
       'inspectionEndDate': v['inspectionEndDate'],
-      'nextMaintenanceKm': v['nextMaintenanceKm'],
-      'isActive': v['isActive'],
+      'nextMaintenanceKm': v['nextMaintenanceKm'] ?? 0,
+      'isActive': v['isActive'] ?? true,
       'companyId': v['companyId'],
+      'damageRecordAmount': v['damageRecordAmount'] ?? 0,
     });
   }
+
+  // ── Managers ───────────────────────────────────────────────────────────────
+  Future<List<dynamic>> getManagers() =>
+      get('/api/v1/managers').then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+  Future<dynamic> getManager(int id) => get('/api/v1/managers/$id');
+  Future<dynamic> createManager(Map<String, dynamic> data) =>
+      post('/api/v1/managers', data);
+  Future<dynamic> updateManager(int id, Map<String, dynamic> data) =>
+      put('/api/v1/managers/$id', data);
+  Future<void> deleteManager(int id) => delete('/api/v1/managers/$id');
+  Future<List<dynamic>> getManagerPermissions(int managerId) =>
+      get('/api/v1/managers/$managerId/permissions')
+          .then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+
+  // ── Permissions ───────────────────────────────────────────────────────────
+  Future<List<dynamic>> getPermissions() =>
+      get('/api/Permission').then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+
+  // ── ManagerPermission ─────────────────────────────────────────────────────
+  Future<List<dynamic>> getManagerPermissionLinks() =>
+      get('/api/ManagerPermission').then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+  Future<dynamic> createManagerPermission(Map<String, dynamic> data) =>
+      post('/api/ManagerPermission', data);
+  Future<void> deleteManagerPermission(int id) =>
+      delete('/api/ManagerPermission/$id');
+
+  // ── Departments ───────────────────────────────────────────────────────────
+  Future<List<dynamic>> getDepartments() =>
+      get('/api/v1/departments').then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+  Future<List<dynamic>> getDepartmentsByCompany(int companyId) =>
+      get('/api/v1/departments/company/$companyId')
+          .then((v) => (v is List ? v : v['value'] ?? []) as List<dynamic>);
+  Future<dynamic> createDepartment(Map<String, dynamic> data) =>
+      post('/api/v1/departments', data);
+  Future<dynamic> updateDepartment(int id, Map<String, dynamic> data) =>
+      put('/api/v1/departments/$id', data);
+  Future<void> deleteDepartment(int id) => delete('/api/v1/departments/$id');
 
   // ── Locations (Warehouses) ─────────────────────────────────────────────────
   /// GET /api/Locations/company/{companyId}
@@ -212,7 +258,14 @@ class ApiService {
   /// POST /api/Locations
   /// body: { companyId, locationName, latitude, longitude, address: { fullAddress } }
   Future<dynamic> createLocation(Map<String, dynamic> data) =>
-      postAnonymous('/api/Locations', data);
+      post('/api/Locations', data);
+
+  /// PUT /api/Locations/{id}
+  Future<dynamic> updateLocation(int id, Map<String, dynamic> data) =>
+      put('/api/Locations/$id', data);
+
+  /// DELETE /api/Locations/{id}
+  Future<void> deleteLocation(int id) => delete('/api/Locations/$id');
 
   // ── Trips (Seferler) ───────────────────────────────────────────────────────
   

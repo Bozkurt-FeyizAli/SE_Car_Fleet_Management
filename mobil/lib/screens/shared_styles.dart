@@ -61,6 +61,9 @@ Color kStatusColor(String? s) {
       return Colors.green;
     case 'suspended':
       return Colors.orange;
+    case 'Preparing':
+    case 'preparing':
+      return Colors.orange;
     case 'InTrip':
     case 'on_trip':
       return const Color(0xFF60A5FA);
@@ -82,6 +85,9 @@ String kStatusLabel(String? s) {
     case 'passive':
     case 'inactive':
       return 'Pasif';
+    case 'Preparing':
+    case 'preparing':
+      return 'Hazırlanıyor';
     case 'InTrip':
     case 'on_trip':
       return 'Seferde';

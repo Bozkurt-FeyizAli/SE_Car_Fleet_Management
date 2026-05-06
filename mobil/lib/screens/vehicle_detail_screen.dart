@@ -6,8 +6,14 @@ import 'shared_styles.dart';
 class VehicleDetailScreen extends StatefulWidget {
   final UserModel user;
   final Map<String, dynamic>? item;
+  final bool hasEditPerm;
 
-  const VehicleDetailScreen({super.key, required this.user, this.item});
+  const VehicleDetailScreen({
+    super.key, 
+    required this.user, 
+    this.item,
+    this.hasEditPerm = true,
+  });
 
   @override
   State<VehicleDetailScreen> createState() => _VehicleDetailScreenState();
@@ -24,12 +30,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   late TextEditingController capC;
   late TextEditingController priceC;
   late TextEditingController kmC;
-  late TextEditingController compIdC;
-  late TextEditingController insSD;
   late TextEditingController insED;
-  late TextEditingController casSD;
   late TextEditingController casED;
-  late TextEditingController inpSD;
   late TextEditingController inpED;
   
   String vType = 'Kamyon';
@@ -53,13 +55,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     capC = TextEditingController(text: (item?['capacityKg'] ?? item?['capacity'] ?? 0).toString());
     priceC = TextEditingController(text: (item?['baseRentPrice'] ?? 0).toString());
     kmC = TextEditingController(text: (item?['nextMaintenanceKm'] ?? 0).toString());
-    compIdC = TextEditingController(text: (item?['companyId'] ?? widget.user.companyId ?? 1).toString());
     
-    insSD = TextEditingController(text: dateOf(item?['insuranceStartDate']) ?? '');
     insED = TextEditingController(text: dateOf(item?['insuranceEndDate']) ?? '');
-    casSD = TextEditingController(text: dateOf(item?['cascoStartDate']) ?? '');
     casED = TextEditingController(text: dateOf(item?['cascoEndDate']) ?? '');
-    inpSD = TextEditingController(text: dateOf(item?['inspectionStartDate']) ?? '');
     inpED = TextEditingController(text: dateOf(item?['inspectionEndDate']) ?? '');
     
     vType = item?['vehicleType'] ?? item?['type'] ?? 'Kamyon';
@@ -70,12 +68,41 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
 
   Future<void> _loadDrivers() async {
     try {
-      final res = await _api.getDrivers();
-      final list = res.cast<Map<String, dynamic>>();
+      final results = await Future.wait([
+        _api.getDrivers(),
+        _api.getUsers(),
+      ]);
+      final driversList = results[0].cast<Map<String, dynamic>>();
+      final usersList = results[1].cast<Map<String, dynamic>>();
+      
+      // For rented-in vehicles, use the logged-in user's company (renter)
+      // so they can assign their own drivers to the rented vehicle
+      final isRentedIn = widget.item?['isRentedIn'] == true;
+      final driverCompanyId = isRentedIn
+          ? widget.user.companyId
+          : (widget.item?['companyId'] ?? widget.user.companyId);
+
+      final combined = driversList.map((driver) {
+        final userId = driver['userId'];
+        final user = usersList.firstWhere((u) => u['id'] == userId, orElse: () => <String, dynamic>{});
+        return {
+          ...user,
+          ...driver,
+          'id': user['id'] ?? driver['userId'],
+          'driverId': driver['id'],
+          'userId': driver['userId'],
+        };
+      }).toList();
+
+      final filtered = combined.where((d) {
+        if (driverCompanyId != null && d['companyId'] != driverCompanyId) return false;
+        return true;
+      }).toList();
+
       if (!mounted) return;
 
       setState(() {
-        _drivers = list;
+        _drivers = filtered;
         if (widget.item != null) {
           final plate = widget.item!['plate'] ?? widget.item!['plateNumber'];
           final matching = _drivers.where((d) => d['vehiclePlate'] == plate);
@@ -96,12 +123,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     capC.dispose();
     priceC.dispose();
     kmC.dispose();
-    compIdC.dispose();
-    insSD.dispose();
     insED.dispose();
-    casSD.dispose();
     casED.dispose();
-    inpSD.dispose();
     inpED.dispose();
     super.dispose();
   }
@@ -134,7 +157,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       'inspectionEndDate': iso(inpED.text),
       'nextMaintenanceKm': int.tryParse(kmC.text) ?? 0,
       'isActive': active,
-      'companyId': int.tryParse(compIdC.text) ?? widget.user.companyId ?? 1,
+      'companyId': widget.item?['companyId'] ?? widget.user.companyId ?? 1,
       'damageRecordAmount': (widget.item?['damageRecordAmount'] ?? 0).toDouble(),
     };
 
@@ -142,9 +165,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       final oldPlate = widget.item?['plate'] ?? widget.item?['plateNumber'];
       final oldReg = widget.item?['registrationNumber'];
       
+      final isRentedOut = widget.item?['isRentedOut'] == true;
+      final isRentedIn = widget.item?['isRentedIn'] == true;
+      final isDetailsLocked = isRentedOut || isRentedIn || !widget.hasEditPerm;
+
       if (widget.item != null && oldPlate != null && oldReg != null) {
-        await _api.updateVehicleRegistration(oldReg, regBody);
-        await _api.updateVehicle(oldPlate, vBody);
+        if (!isDetailsLocked) {
+          await _api.updateVehicleRegistration(oldReg, regBody);
+          await _api.updateVehicle(oldPlate, vBody);
+        }
         
         // Handle driver assignment
         if (_selectedDriverToAssign != null) {
@@ -211,25 +240,40 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   }
 
   Future<void> _unassignDriver(Map<String, dynamic> driver) async {
+    final driverId = driver['driverId'] ?? driver['id'];
     final driverBody = <String, dynamic>{
       ...driver,
       'vehiclePlate': null,
     };
-    await _api.updateDriver(driver['id'], driverBody);
+    await _api.updateDriver(driverId, driverBody);
   }
 
   Future<void> _assignDriverToVehicle(Map<String, dynamic> driver, String plate) async {
+    final driverId = driver['driverId'] ?? driver['id'];
     final driverBody = <String, dynamic>{
       ...driver,
       'vehiclePlate': plate,
     };
-    await _api.updateDriver(driver['id'], driverBody);
+    await _api.updateDriver(driverId, driverBody);
   }
 
   @override
   Widget build(BuildContext context) {
     final isNew = widget.item == null;
-    final isRented = widget.item?['isRentedOut'] == true || widget.item?['isRentedIn'] == true;
+    final isRentedOut = widget.item?['isRentedOut'] == true;
+    final isRentedIn = widget.item?['isRentedIn'] == true;
+    
+    final isDetailsLocked = isRentedOut || isRentedIn || !widget.hasEditPerm;
+    final isDriverLocked = isRentedOut;
+
+    String infoText = '';
+    if (!widget.hasEditPerm) {
+      infoText = 'Araç düzenleme yetkiniz bulunmamaktadır. Sadece şoför ataması yapabilirsiniz.';
+    } else if (isRentedOut) {
+      infoText = 'Bu araç kiralandı statüsünde olduğu için bilgileri güncellenemez.';
+    } else if (isRentedIn) {
+      infoText = 'Bu araç dışarıdan kiralandığı için sadece şoför ataması yapılabilir.';
+    }
 
     return Scaffold(
       backgroundColor: kBg,
@@ -238,7 +282,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         title: Text(isNew ? 'Yeni Araç Ekle' : 'Araç Detayı', style: const TextStyle(fontSize: 18, color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (!isNew && !isRented)
+          if (!isNew && !isDetailsLocked && widget.hasEditPerm)
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.redAccent),
               onPressed: _delete,
@@ -252,7 +296,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (isRented)
+                  if (infoText.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
@@ -261,14 +305,14 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.orangeAccent),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.orangeAccent),
-                          SizedBox(width: 12),
+                          const Icon(Icons.info_outline, color: Colors.orangeAccent),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Bu araç şu anda kiralık statüsünde olduğu için bilgileri düzenlenemez.',
-                              style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
+                              infoText,
+                              style: const TextStyle(color: Colors.orangeAccent, fontSize: 13),
                             ),
                           ),
                         ],
@@ -287,16 +331,14 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                       children: [
                         const Text('Temel Bilgiler', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 16),
-                        kField('Plaka *', plateC, enabled: !isRented),
-                        kField('Marka / Model *', brandC, enabled: !isRented),
-                        kField('Ruhsat No', regC, enabled: !isRented),
-                        kField('Yıl', yearC, type: TextInputType.number, enabled: !isRented),
-                        kField('Kapasite (kg)', capC, type: TextInputType.number, enabled: !isRented),
-                        kField('Taban Fiyat (₺)', priceC, type: TextInputType.number, enabled: !isRented),
-                        kField('Sonraki Bakım KM', kmC, type: TextInputType.number, enabled: !isRented),
-                        if (widget.user.role == UserRole.superAdmin)
-                          kField('Şirket ID', compIdC, type: TextInputType.number, enabled: !isRented),
-                        
+                        kField('Plaka *', plateC, enabled: !isDetailsLocked),
+                        kField('Marka / Model *', brandC, enabled: !isDetailsLocked),
+                        kField('Ruhsat No', regC, enabled: !isDetailsLocked),
+                        kField('Yıl', yearC, type: TextInputType.number, enabled: !isDetailsLocked),
+                        kField('Kapasite (kg)', capC, type: TextInputType.number, enabled: !isDetailsLocked),
+                        kField('Taban Fiyat (₺)', priceC, type: TextInputType.number, enabled: !isDetailsLocked),
+                        kField('Sonraki Bakım KM', kmC, type: TextInputType.number, enabled: !isDetailsLocked),
+
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
                           value: ['Kamyon', 'TIR', 'Van', 'Otomobil'].contains(vType) ? vType : 'Kamyon',
@@ -309,7 +351,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                             DropdownMenuItem(value: 'Van', child: Text('Van')),
                             DropdownMenuItem(value: 'Otomobil', child: Text('Otomobil')),
                           ],
-                          onChanged: isRented ? null : (v) => setState(() => vType = v ?? vType),
+                          onChanged: isDetailsLocked ? null : (v) => setState(() => vType = v ?? vType),
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<bool>(
@@ -321,7 +363,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                             DropdownMenuItem(value: true, child: Text('Aktif')),
                             DropdownMenuItem(value: false, child: Text('Pasif')),
                           ],
-                          onChanged: isRented ? null : (v) => setState(() => active = v ?? active),
+                          onChanged: isDetailsLocked ? null : (v) => setState(() => active = v ?? active),
                         ),
                       ],
                     ),
@@ -351,7 +393,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                                   style: const TextStyle(color: Colors.white, fontSize: 15),
                                 ),
                               ),
-                              if (!isRented)
+                              if (!isDriverLocked)
                                 TextButton(
                                   onPressed: () {
                                     setState(() {
@@ -375,7 +417,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                                 child: Text('${d['driverName']} ${d['vehiclePlate'] != null ? '(${d['vehiclePlate']})' : ''}'),
                               )),
                             ],
-                            onChanged: isRented ? null : (v) => setState(() => _selectedDriverToAssign = v),
+                            onChanged: isDriverLocked ? null : (v) => setState(() => _selectedDriverToAssign = v),
                           ),
                           if (_selectedDriverToAssign?['id'] == -1)
                             const Padding(
@@ -401,19 +443,16 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                       children: [
                         const Text('Sigorta / Kasko / Muayene', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 16),
-                        kField('Sigorta Başlangıç (YYYY-MM-DD)', insSD, enabled: !isRented),
-                        kField('Sigorta Bitiş (YYYY-MM-DD)', insED, enabled: !isRented),
-                        kField('Kasko Başlangıç (YYYY-MM-DD)', casSD, enabled: !isRented),
-                        kField('Kasko Bitiş (YYYY-MM-DD)', casED, enabled: !isRented),
-                        kField('Muayene Başlangıç (YYYY-MM-DD)', inpSD, enabled: !isRented),
-                        kField('Muayene Bitiş (YYYY-MM-DD)', inpED, enabled: !isRented),
+                        kField('Sigorta Bitiş (YYYY-MM-DD)', insED, enabled: !isDetailsLocked),
+                        kField('Kasko Bitiş (YYYY-MM-DD)', casED, enabled: !isDetailsLocked),
+                        kField('Muayene Bitiş (YYYY-MM-DD)', inpED, enabled: !isDetailsLocked),
                       ],
                     ),
                   ),
                   
                   const SizedBox(height: 32),
                   
-                  if (!isRented)
+                  if (!isRentedOut)
                     SizedBox(
                       width: double.infinity,
                       height: 50,

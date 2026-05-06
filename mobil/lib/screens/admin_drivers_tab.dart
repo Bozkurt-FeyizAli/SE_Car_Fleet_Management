@@ -4,8 +4,8 @@ import 'shared_styles.dart';
 import 'driver_detail_screen.dart';
 
 class AdminDriversTab extends StatefulWidget {
-  final int defaultCompanyId;
-  const AdminDriversTab({super.key, this.defaultCompanyId = 1});
+  final int? companyId;
+  const AdminDriversTab({super.key, this.companyId});
   @override
   State<AdminDriversTab> createState() => _State();
 }
@@ -13,6 +13,7 @@ class AdminDriversTab extends StatefulWidget {
 class _State extends State<AdminDriversTab> {
   final _api = ApiService();
   List<Map<String, dynamic>> _all = [], _shown = [];
+  Map<int, String> _managerNames = {};
   bool _loading = true;
   final _search = TextEditingController();
 
@@ -34,26 +35,42 @@ class _State extends State<AdminDriversTab> {
       final results = await Future.wait([
         _api.getUsers(),
         _api.getDrivers(),
+        _api.getManagers(),
       ]);
       if (!mounted) return;
       
       final users = results[0].cast<Map<String, dynamic>>();
       final drivers = results[1].cast<Map<String, dynamic>>();
+      final managers = results[2].cast<Map<String, dynamic>>();
       
+      // Build managerId -> name map
+      final mNames = <int, String>{};
+      for (final m in managers) {
+        final mid = (m['id'] as num).toInt();
+        final uid = m['userId'];
+        final u = users.firstWhere((u) => u['id'] == uid, orElse: () => <String, dynamic>{});
+        mNames[mid] = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+      }
+
       final combined = drivers.map((driver) {
         final userId = driver['userId'];
         final user = users.firstWhere((u) => u['id'] == userId, orElse: () => <String, dynamic>{});
         return {
           ...user,
           ...driver,
-          'id': user['id'] ?? driver['userId'], // We store user id as 'id' for compatibility
-          'driverId': driver['id'], // Real driver table ID
+          'id': user['id'] ?? driver['userId'],
+          'driverId': driver['id'],
           'userId': driver['userId'],
         };
       }).toList();
 
       setState(() {
-        _all = combined;
+        _managerNames = mNames;
+        if (widget.companyId != null) {
+          _all = combined.where((d) => d['companyId'] == widget.companyId).toList();
+        } else {
+          _all = combined;
+        }
         _filter();
         _loading = false;
       });
@@ -84,7 +101,7 @@ class _State extends State<AdminDriversTab> {
       MaterialPageRoute(
         builder: (context) => DriverDetailScreen(
           item: item,
-          defaultCompanyId: widget.defaultCompanyId,
+          defaultCompanyId: widget.companyId ?? 1,
         ),
       ),
     );
@@ -233,6 +250,14 @@ class _State extends State<AdminDriversTab> {
                                         child: Text(
                                           'Atanan Araç: ${d['vehiclePlate']}',
                                           style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    if (d['parentManagerId'] != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Yönetici: ${_managerNames[(d['parentManagerId'] as num).toInt()] ?? 'Bilinmeyen'}',
+                                          style: const TextStyle(color: Color(0xFF7C3AED), fontSize: 12, fontWeight: FontWeight.w600),
                                         ),
                                       ),
                                     const SizedBox(height: 8),

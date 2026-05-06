@@ -54,8 +54,37 @@ class _AdminTripsTabState extends State<AdminTripsTab> {
         };
       }).toList();
       _locations = List<Map<String, dynamic>>.from(locs);
-      final companyVehicles = vehs.where((v) => v['companyId'] == _companyId).toList();
-      _vehicles = List<Map<String, dynamic>>.from(companyVehicles);
+      
+      final renList = await _api.getRentals().catchError((_) => <dynamic>[]);
+      final processedVehicles = <Map<String, dynamic>>[];
+      for (var rawV in vehs) {
+        final v = rawV as Map<String, dynamic>;
+        final plate = v['plate'] ?? v['plateNumber'];
+        final activeRentals = renList.where((r) => r['vehiclePlate'] == plate && r['isCompleted'] == false).toList();
+        
+        bool isRentedOut = false;
+        bool isRentedIn = false;
+
+        if (activeRentals.isNotEmpty) {
+          final rental = activeRentals.first;
+          if (rental['ownerCompanyId'] == _companyId && rental['renterCompanyId'] != _companyId) {
+            isRentedOut = true;
+          } else if (rental['renterCompanyId'] == _companyId && rental['ownerCompanyId'] != _companyId) {
+            isRentedIn = true;
+          }
+        }
+        
+        bool isMaintenance = ((v['currentKm'] as num?) ?? 0) >= ((v['nextMaintenanceKm'] as num?) ?? 999999);
+
+        // Exclude if it's rented OUT or in Maintenance
+        if (isRentedOut || isMaintenance) continue;
+
+        // Include if owned by company or rented in
+        if (v['companyId'] == _companyId || isRentedIn) {
+          processedVehicles.add(v);
+        }
+      }
+      _vehicles = processedVehicles;
 
       await _loadTrips();
     } catch (e) {
@@ -68,15 +97,28 @@ class _AdminTripsTabState extends State<AdminTripsTab> {
   Future<void> _loadTrips() async {
     setState(() => _loading = true);
     try {
-      List<dynamic> list;
-      if (_filter == 'active') {
-        list = await _api.getActiveTripsByCompany(_companyId);
-      } else {
-        // Fetch all, then filter completed
-        final all = await _api.getAllTrips();
-        // Since getAllTrips might return trips for all companies if admin, filter by company
-        list = all.where((t) => t['companyId'] == _companyId && t['status'] == 'Completed').toList();
-      }
+      final all = await _api.getAllTrips();
+      final companyDriverIds = _drivers.map((d) => d['driverTableId']).toSet();
+      
+      final list = all.where((t) {
+        if (!companyDriverIds.contains(t['driverId'])) return false;
+        if (_filter == 'active') {
+          return t['status'] != 'Completed';
+        } else {
+          return t['status'] == 'Completed';
+        }
+      }).toList();
+
+      list.sort((a, b) {
+        if (_filter == 'completed') {
+          final tA = a['endTime'] != null ? DateTime.tryParse(a['endTime'].toString()) : null;
+          final tB = b['endTime'] != null ? DateTime.tryParse(b['endTime'].toString()) : null;
+          if (tA != null && tB != null) return tB.compareTo(tA);
+          if (tA != null) return -1;
+          if (tB != null) return 1;
+        }
+        return (b['id'] as int? ?? 0).compareTo(a['id'] as int? ?? 0);
+      });
 
       if (!mounted) return;
       setState(() {
@@ -459,8 +501,8 @@ class _AdminTripsTabState extends State<AdminTripsTab> {
                                           ],
                                         ),
                                         kBadge(
-                                          status == 'Completed' ? 'Tamamlandı' : 'Aktif',
-                                          status == 'Completed' ? kGreen : Colors.orange,
+                                          kStatusLabel(status),
+                                          kStatusColor(status),
                                         ),
                                       ],
                                     ),

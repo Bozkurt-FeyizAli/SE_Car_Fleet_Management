@@ -11,6 +11,7 @@ class AdminUsersTab extends StatefulWidget {
 class _State extends State<AdminUsersTab> {
   final _api = ApiService();
   List<Map<String, dynamic>> _all = [], _shown = [];
+  Map<int, String> _companyNames = {};
   bool _loading = true;
   final _search = TextEditingController();
 
@@ -29,10 +30,20 @@ class _State extends State<AdminUsersTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final list = await _api.getUsers();
+      final results = await Future.wait([
+        _api.getUsers(),
+        _api.getCompanies().catchError((_) => <dynamic>[]),
+      ]);
       if (!mounted) return;
+      final companies = (results[1] as List).cast<Map<String, dynamic>>();
+      final cMap = <int, String>{};
+      for (final c in companies) {
+        final id = (c['id'] as num?)?.toInt();
+        if (id != null) cMap[id] = c['companyName'] ?? c['name'] ?? '—';
+      }
       setState(() {
-        _all = list.cast();
+        _all = results[0].cast();
+        _companyNames = cMap;
         _filter();
         _loading = false;
       });
@@ -58,25 +69,32 @@ class _State extends State<AdminUsersTab> {
 
   String _roleLabel(int? id) {
     switch (id) {
-      case 0:
-        return 'Sistem Yöneticisi';
-      case 1:
-        return 'Şirket Yöneticisi';
-      case 2:
-        return 'Şoför';
-      default:
-        return 'Bilinmeyen';
+      case 0: return 'Admin';
+      case 1: return 'Yönetici';
+      case 2: return 'Şoför';
+      default: return 'Bilinmeyen';
+    }
+  }
+
+  Color _roleColor(int? id) {
+    switch (id) {
+      case 0: return const Color(0xFFEA580C);
+      case 1: return const Color(0xFF7C3AED);
+      case 2: return kGreen;
+      default: return kMuted;
     }
   }
 
   Future<void> _openForm({Map<String, dynamic>? item}) async {
+    final isEdit = item != null;
     final firstC = TextEditingController(text: item?['firstName'] ?? '');
     final lastC = TextEditingController(text: item?['lastName'] ?? '');
     final emailC = TextEditingController(text: item?['email'] ?? '');
     final passC = TextEditingController();
-    final phoneC = TextEditingController(text: item?['phone'] ?? '');
+    final phoneC = TextEditingController(text: item?['phoneNumber'] ?? item?['phone'] ?? '');
     final tcC = TextEditingController(text: item?['tcIdentityNumber'] ?? '');
     int roleId = item?['role'] ?? item?['roleId'] ?? 2;
+    int companyId = (item?['companyId'] as num?)?.toInt() ?? 1;
 
     await showDialog(
       context: context,
@@ -84,7 +102,7 @@ class _State extends State<AdminUsersTab> {
         builder: (ctx, ss) => AlertDialog(
           backgroundColor: kCard,
           title: Text(
-            item == null ? 'Yeni Kullanıcı' : 'Kullanıcı Düzenle',
+            isEdit ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı',
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           content: SizedBox(
@@ -96,12 +114,13 @@ class _State extends State<AdminUsersTab> {
                   kField('Ad *', firstC),
                   kField('Soyad', lastC),
                   kField('E-posta *', emailC, type: TextInputType.emailAddress),
-                  kField('Şifre', passC, obscure: true),
+                  if (!isEdit) kField('Şifre *', passC, obscure: true)
+                  else kField('Yeni Şifre (boş bırakılabilir)', passC, obscure: true),
                   kField('Telefon', phoneC, type: TextInputType.phone),
-                  kField('T.C. Kimlik No *', tcC, type: TextInputType.number),
+                  kField('T.C. Kimlik No', tcC, type: TextInputType.number),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<int>(
-                    initialValue: roleId == 3 ? 2 : roleId, // default 2
+                    value: roleId == 3 ? 2 : roleId,
                     dropdownColor: kCard,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: fieldDecor('Rol'),
@@ -112,6 +131,34 @@ class _State extends State<AdminUsersTab> {
                     ],
                     onChanged: (v) => ss(() => roleId = v ?? roleId),
                   ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    value: _companyNames.containsKey(companyId) ? companyId : null,
+                    dropdownColor: kCard,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: fieldDecor('Şirket'),
+                    items: _companyNames.entries.map((e) =>
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    ).toList(),
+                    onChanged: (v) => ss(() => companyId = v ?? companyId),
+                  ),
+                  if (isEdit) ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.redAccent),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _delete(item);
+                        },
+                        icon: const Icon(Icons.delete_rounded, size: 16, color: Colors.redAccent),
+                        label: const Text('Kullanıcıyı Sil', style: TextStyle(color: Colors.redAccent)),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -124,8 +171,8 @@ class _State extends State<AdminUsersTab> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: kBlue),
               onPressed: () async {
-                if (firstC.text.isEmpty || emailC.text.isEmpty || tcC.text.isEmpty) {
-                  kError(context, 'Ad, E-posta ve TC zorunludur');
+                if (firstC.text.isEmpty || emailC.text.isEmpty) {
+                  kError(context, 'Ad ve E-posta zorunludur');
                   return;
                 }
                 Navigator.pop(ctx);
@@ -136,13 +183,13 @@ class _State extends State<AdminUsersTab> {
                   'role': roleId,
                   'phoneNumber': phoneC.text,
                   'tcIdentityNumber': tcC.text,
-                  'parentManagerId': null,
-                  'criminalRecord': null,
-                  'companyId': item?['companyId'] ?? 1,
+                  'parentManagerId': item?['parentManagerId'],
+                  'criminalRecord': item?['criminalRecord'],
+                  'companyId': companyId,
                   if (passC.text.isNotEmpty) 'passwordHash': passC.text,
                 };
                 try {
-                  if (item != null && item['id'] != null) {
+                  if (isEdit) {
                     await _api.updateUser(item['id'], body);
                     kSuccess(context, 'Güncellendi');
                   } else {
@@ -155,7 +202,7 @@ class _State extends State<AdminUsersTab> {
                 }
               },
               child: Text(
-                item == null ? 'Kaydet' : 'Güncelle',
+                isEdit ? 'Güncelle' : 'Kaydet',
                 style: const TextStyle(color: Colors.white),
               ),
             ),
@@ -202,11 +249,7 @@ class _State extends State<AdminUsersTab> {
                   controller: _search,
                   style: const TextStyle(color: Colors.white),
                   decoration: fieldDecor('Kullanıcı ara...').copyWith(
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: kMuted,
-                      size: 20,
-                    ),
+                    prefixIcon: const Icon(Icons.search, color: kMuted, size: 20),
                   ),
                   onChanged: (_) => setState(_filter),
                 ),
@@ -219,59 +262,81 @@ class _State extends State<AdminUsersTab> {
                 Expanded(
                   child: _shown.isEmpty
                       ? const Center(
-                          child: Text(
-                            'Kayıt bulunamadı.',
-                            style: TextStyle(color: kMuted),
-                          ),
+                          child: Text('Kayıt bulunamadı.', style: TextStyle(color: kMuted)),
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
                           itemCount: _shown.length,
                           itemBuilder: (_, i) {
                             final u = _shown[i];
-                            final name =
-                                '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'
-                                    .trim();
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: kCard,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: kBorder),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          name.isEmpty ? '(isimsiz)' : name,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14,
-                                          ),
+                            final name = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+                            final email = u['email'] ?? '—';
+                            final roleId = (u['role'] as num?)?.toInt() ?? (u['roleId'] as num?)?.toInt();
+                            final cId = (u['companyId'] as num?)?.toInt();
+                            final companyName = cId != null ? (_companyNames[cId] ?? '—') : '—';
+
+                            return InkWell(
+                              onTap: () => _openForm(item: u),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: kCard,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: kBorder),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: _roleColor(roleId).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: TextStyle(
+                                          color: _roleColor(roleId),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
                                         ),
                                       ),
-                                      kBadge(_roleLabel(u['role'] ?? u['roleId']), kBlue),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    u['email'] ?? '—',
-                                    style: const TextStyle(
-                                      color: Color(0xFF60A5FA),
-                                      fontSize: 12,
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  kActions(
-                                    () => _openForm(item: u),
-                                    () => _delete(u),
-                                  ),
-                                ],
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name.isEmpty ? '(isimsiz)' : name,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          Text(
+                                            email,
+                                            style: const TextStyle(color: kBlue, fontSize: 11),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            companyName,
+                                            style: const TextStyle(color: kMuted, fontSize: 10),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    kBadge(_roleLabel(roleId), _roleColor(roleId)),
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -287,10 +352,7 @@ class _State extends State<AdminUsersTab> {
             backgroundColor: kBlue,
             onPressed: () => _openForm(),
             icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text(
-              'Kullanıcı Ekle',
-              style: TextStyle(color: Colors.white),
-            ),
+            label: const Text('Kullanıcı Ekle', style: TextStyle(color: Colors.white)),
           ),
         ),
       ],

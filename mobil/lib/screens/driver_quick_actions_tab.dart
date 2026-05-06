@@ -13,7 +13,6 @@ class _DriverQuickActionsTabState extends State<DriverQuickActionsTab> {
   final _sections = const [
     (id: 'maintenance', label: 'Bakım Talep Et', icon: Icons.build_rounded, color: Color(0xFF1D4ED8), desc: 'Aracınız için bakım talebi oluşturun'),
     (id: 'issue', label: 'Sorun Bildir', icon: Icons.warning_amber_rounded, color: Color(0xFFD97706), desc: 'Araçla ilgili sorun bildirin'),
-    (id: 'documents', label: 'Belgelerim', icon: Icons.description_rounded, color: Color(0xFF7C3AED), desc: 'Belgelerinizi görüntüleyin'),
     (id: 'daily_check', label: 'Günlük Kontrol', icon: Icons.checklist_rounded, color: Color(0xFF059669), desc: 'Günlük araç kontrolü yapın'),
   ];
 
@@ -89,7 +88,6 @@ class _DriverQuickActionsTabState extends State<DriverQuickActionsTab> {
     switch (_activeSection) {
       case 'maintenance': return const _MaintenanceSection();
       case 'issue': return const _IssueSection();
-      case 'documents': return const _DocumentsSection();
       case 'daily_check': return const _DailyCheckSection();
       default: return const SizedBox.shrink();
     }
@@ -206,44 +204,6 @@ class _IssueSectionState extends State<_IssueSection> {
   }
 }
 
-// ─── Documents ────────────────────────────────────────────────────────────────
-class _DocumentsSection extends StatelessWidget {
-  const _DocumentsSection();
-  @override
-  Widget build(BuildContext context) {
-    final docs = [
-      {'name': 'Ehliyet', 'type': 'Sürücü Belgesi', 'expiry': '2027-05-15', 'status': 'valid'},
-      {'name': 'SRC Belgesi', 'type': 'Mesleki Yeterlilik', 'expiry': '2027-12-01', 'status': 'valid'},
-      {'name': 'Psikoteknik Raporu', 'type': 'Sağlık Belgesi', 'expiry': '2026-06-15', 'status': 'expiring'},
-    ];
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Belgelerim', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 12),
-        ...docs.map((d) => Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(10), border: Border.all(color: kBorder)),
-          child: Row(children: [
-            const Icon(Icons.description_rounded, color: kMuted, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(d['name']!, style: const TextStyle(color: Colors.white, fontSize: 13)),
-              Text(d['type']!, style: const TextStyle(color: kMuted, fontSize: 11)),
-            ])),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('Geçerlilik: ${d['expiry']}', style: const TextStyle(color: kMuted, fontSize: 10)),
-              const SizedBox(height: 4),
-              kBadge(d['status'] == 'valid' ? 'Geçerli' : 'Süresi Yaklaşıyor', d['status'] == 'valid' ? kGreen : Colors.orange),
-            ]),
-          ]),
-        )),
-        const SizedBox(height: 80),
-      ]),
-    );
-  }
-}
 
 // ─── Daily Check ──────────────────────────────────────────────────────────────
 class _DailyCheckSection extends StatefulWidget {
