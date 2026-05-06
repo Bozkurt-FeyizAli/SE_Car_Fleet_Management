@@ -10,7 +10,6 @@ import 'driver_profile_tab.dart';
 import 'driver_company_tab.dart';
 import 'driver_vehicle_tab.dart';
 import 'driver_trips_tab.dart';
-import 'driver_department_tab.dart';
 import 'driver_quick_actions_tab.dart';
 import 'driver_accident_tab.dart';
 import 'driver_settings_tab.dart';
@@ -21,7 +20,6 @@ const _kTabDefs = [
   (id: 'company', label: 'Şirket', icon: Icons.business_rounded),
   (id: 'vehicle', label: 'Araç', icon: Icons.directions_car_rounded),
   (id: 'trips', label: 'Seferler', icon: Icons.map_rounded),
-  (id: 'department', label: 'Departman', icon: Icons.group_rounded),
   (id: 'quick', label: 'Hızlı', icon: Icons.bolt_rounded),
   (id: 'accident', label: 'Kaza', icon: Icons.warning_rounded),
   (id: 'settings', label: 'Ayarlar', icon: Icons.settings_rounded),
@@ -74,12 +72,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         return DriverVehicleTab(user: widget.user);
       case 'trips':
         return DriverTripsTab(user: widget.user);
-      case 'department':
-        return const DriverDepartmentTab();
       case 'quick':
         return const DriverQuickActionsTab();
       case 'accident':
-        return const DriverAccidentTab();
+        return DriverAccidentTab(user: widget.user);
       case 'settings':
         return DriverSettingsTab(onLogout: _logout);
       default:

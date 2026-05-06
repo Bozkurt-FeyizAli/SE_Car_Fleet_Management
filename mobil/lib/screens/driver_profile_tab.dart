@@ -32,9 +32,51 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
     try {
       final id = int.tryParse(widget.user.id);
       if (id != null) {
-        final data = await _api.getUser(id);
+        final results = await Future.wait([
+          _api.getUser(id),
+          _api.getDrivers(),
+          _api.getManagers(),
+          _api.getUsers(),
+        ]);
+
+        final userData = results[0] as Map<String, dynamic>;
+        final drivers = (results[1] as List).cast<Map<String, dynamic>>();
+        final managers = (results[2] as List).cast<Map<String, dynamic>>();
+        final users = (results[3] as List).cast<Map<String, dynamic>>();
+
+        final driverData = drivers.firstWhere(
+          (d) => d['userId'] == id,
+          orElse: () => <String, dynamic>{},
+        );
+
+        // parentManagerId -> Manager.id -> Manager.userId -> User
+        String? parentManagerName;
+        final pmId = (userData['parentManagerId'] as num?)?.toInt();
+        if (pmId != null) {
+          final manager = managers.firstWhere(
+            (m) => (m['id'] as num).toInt() == pmId,
+            orElse: () => <String, dynamic>{},
+          );
+          if (manager.isNotEmpty) {
+            final mUserId = manager['userId'];
+            final mUser = users.firstWhere(
+              (u) => u['id'] == mUserId,
+              orElse: () => <String, dynamic>{},
+            );
+            if (mUser.isNotEmpty) {
+              parentManagerName = '${mUser['firstName'] ?? ''} ${mUser['lastName'] ?? ''}'.trim();
+            }
+          }
+        }
+
         if (!mounted) return;
-        setState(() => _data = data as Map<String, dynamic>?);
+        setState(() {
+          _data = {
+            ...userData,
+            ...driverData,
+            if (parentManagerName != null) 'parentManagerName': parentManagerName,
+          };
+        });
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
@@ -51,15 +93,14 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
 
   @override
   Widget build(BuildContext context) {
-    final name = widget.user.name;
-    final email = widget.user.email;
-    final score = (_data?['driverScore'] as num?)?.toInt() ?? 0;
-    final status = _data?['driverTripStatus'] ?? 'active';
-    final statusLabel = status == 'active'
-        ? 'Aktif'
-        : status == 'on_trip'
-        ? 'Seferde'
-        : 'Pasif';
+    final name = _data != null
+        ? '${_data!['firstName'] ?? ''} ${_data!['lastName'] ?? ''}'.trim()
+        : widget.user.name;
+    final email = _data?['email'] ?? widget.user.email;
+    final score = (_data?['points'] as num?)?.toInt() ?? 0;
+    final status = _data?['status'] ?? 'Idle';
+    final statusLabel = kStatusLabel(status);
+    final statusColor = kStatusColor(status);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -117,9 +158,7 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
                   spacing: 8,
                   children: [
                     kBadge('Sürücü Skoru: $score', _emerald),
-                    kBadge(statusLabel, kBlue),
-                    if (_data?['assignedVehicleId'] != null)
-                      kBadge('Araç ID: ${_data!['assignedVehicleId']}', kMuted),
+                    kBadge(statusLabel, statusColor),
                   ],
                 ),
               ],
@@ -153,21 +192,11 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
                     child: CircularProgressIndicator(color: _emerald),
                   )
                 else ...[
-                  _infoRow(
-                    'TC Kimlik No',
-                    (_data?['tcIdentityNumber'] ?? '—').toString(),
-                    Icons.badge_outlined,
-                  ),
                   _infoRow('E-posta', email, Icons.email_outlined),
                   _infoRow(
                     'Telefon',
-                    (_data?['phone'] ?? '—').toString(),
+                    (_data?['phoneNumber'] ?? '—').toString(),
                     Icons.phone_outlined,
-                  ),
-                  _infoRow(
-                    'Sicil Kaydı',
-                    (_data?['criminalRecord'] ?? 'Temiz').toString(),
-                    Icons.gavel_outlined,
                   ),
                 ],
               ],
@@ -175,7 +204,7 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
           ),
           const SizedBox(height: 16),
 
-          // License info
+          // License & driver info
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -201,7 +230,7 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
                 else ...[
                   _infoRow(
                     'Ehliyet No',
-                    (_data?['driverLicenseId'] ?? '—').toString(),
+                    (_data?['licenseNumber'] ?? '—').toString(),
                     Icons.credit_card_rounded,
                   ),
                   _infoRow(
@@ -210,8 +239,13 @@ class _DriverProfileTabState extends State<DriverProfileTab> {
                     Icons.star_rounded,
                   ),
                   _infoRow(
-                    'Bağlı Yönetici ID',
-                    (_data?['parentUserId']?.toString() ?? '—'),
+                    'Atanmış Araç',
+                    (_data?['vehiclePlate'] ?? 'Araç atanmamış').toString(),
+                    Icons.directions_car_rounded,
+                  ),
+                  _infoRow(
+                    'Bağlı Yönetici',
+                    (_data?['parentManagerName'] ?? 'Yönetici atanmamış'),
                     Icons.person_rounded,
                   ),
                 ],

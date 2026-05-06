@@ -6,22 +6,16 @@ import 'login_screen.dart';
 import 'shared_styles.dart';
 import 'admin_companies_tab.dart';
 import 'admin_users_tab.dart';
-import 'admin_drivers_tab.dart';
-import 'admin_vehicles_tab.dart';
-import 'admin_rentals_tab.dart';
-import 'admin_locations_tab.dart';
-import 'admin_trips_tab.dart';
+import 'sysadmin_vehicles_tab.dart';
+import 'sysadmin_locations_tab.dart';
 
 // ─── 9 tabs matching web SystemAdminPanel ────────────────────────────────
 const _tabs = [
   (id: 'dashboard', label: 'Dashboard', icon: Icons.dashboard_rounded),
   (id: 'companies', label: 'Şirketler', icon: Icons.business_rounded),
   (id: 'users', label: 'Kullanıcılar', icon: Icons.people_rounded),
-  (id: 'drivers', label: 'Şoförler', icon: Icons.local_shipping_rounded),
   (id: 'vehicles', label: 'Araçlar', icon: Icons.directions_car_rounded),
-  (id: 'rentals', label: 'Kiralık', icon: Icons.swap_horiz_rounded),
   (id: 'locations', label: 'Depolar', icon: Icons.warehouse_rounded),
-  (id: 'trips', label: 'Seferler', icon: Icons.map_rounded),
   (id: 'audit', label: 'Denetim', icon: Icons.assignment_rounded),
   (id: 'settings', label: 'Ayarlar', icon: Icons.settings_rounded),
 ];
@@ -61,16 +55,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         return const AdminCompaniesTab();
       case 'users':
         return const AdminUsersTab();
-      case 'drivers':
-        return AdminDriversTab(defaultCompanyId: widget.user.companyId ?? 1);
       case 'vehicles':
-        return AdminVehiclesTab(user: widget.user);
-      case 'rentals':
-        return AdminRentalsTab(user: widget.user);
+        return SysAdminVehiclesTab(user: widget.user);
       case 'locations':
-        return AdminLocationsTab(user: widget.user);
-      case 'trips':
-        return AdminTripsTab(user: widget.user);
+        return SysAdminLocationsTab(user: widget.user);
       case 'audit':
         return const _AuditTab();
       case 'settings':
@@ -213,7 +201,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Dashboard — matches web DashboardTab.tsx
+// Dashboard — System Admin Overview
 // ═══════════════════════════════════════════════════════════════════════════
 class _DashboardTab extends StatefulWidget {
   final UserModel user;
@@ -224,8 +212,15 @@ class _DashboardTab extends StatefulWidget {
 
 class _DashboardState extends State<_DashboardTab> {
   final _api = ApiService();
-  List<Map<String, dynamic>> _companies = [], _users = [], _vehicles = [];
   bool _loading = true;
+
+  List<Map<String, dynamic>> _companies = [];
+  List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _vehicles = [];
+  List<Map<String, dynamic>> _drivers = [];
+  List<Map<String, dynamic>> _managers = [];
+  List<Map<String, dynamic>> _rentals = [];
+  List<Map<String, dynamic>> _trips = [];
 
   @override
   void initState() {
@@ -237,15 +232,23 @@ class _DashboardState extends State<_DashboardTab> {
     setState(() => _loading = true);
     try {
       final results = await Future.wait([
-        _api.getCompanies(),
-        _api.getUsers(),
-        _api.getVehicles(),
+        _api.getCompanies().catchError((_) => <dynamic>[]),
+        _api.getUsers().catchError((_) => <dynamic>[]),
+        _api.getVehicles().catchError((_) => <dynamic>[]),
+        _api.getDrivers().catchError((_) => <dynamic>[]),
+        _api.getManagers().catchError((_) => <dynamic>[]),
+        _api.getAllRentals().catchError((_) => <dynamic>[]),
+        _api.getAllTrips().catchError((_) => <dynamic>[]),
       ]);
       if (!mounted) return;
       setState(() {
-        _companies = results[0].cast();
-        _users = results[1].cast();
-        _vehicles = results[2].cast();
+        _companies = (results[0] as List).cast<Map<String, dynamic>>();
+        _users = (results[1] as List).cast<Map<String, dynamic>>();
+        _vehicles = (results[2] as List).cast<Map<String, dynamic>>();
+        _drivers = (results[3] as List).cast<Map<String, dynamic>>();
+        _managers = (results[4] as List).cast<Map<String, dynamic>>();
+        _rentals = (results[5] as List).cast<Map<String, dynamic>>();
+        _trips = (results[6] as List).cast<Map<String, dynamic>>();
         _loading = false;
       });
     } catch (_) {
@@ -255,20 +258,15 @@ class _DashboardState extends State<_DashboardTab> {
 
   @override
   Widget build(BuildContext context) {
-    final activeCompanies = _companies
-        .where((c) => c['status'] == 'active')
-        .length;
-    final drivers = _users
-        .where((u) => (u['roleId'] as num?)?.toInt() == 3)
-        .toList();
-    final activeD = drivers
-        .where((d) => d['driverTripStatus'] != 'inactive')
-        .length;
+    final activeCompanies = _companies.where((c) => c['status'] == 'active').length;
     final activeV = _vehicles.where((v) => v['isActive'] == true).length;
-    final scores = drivers.map((d) => (d['driverScore'] as num?)?.toInt() ?? 0);
-    final avgScore = drivers.isEmpty
-        ? 0.0
-        : scores.reduce((a, b) => a + b) / drivers.length;
+    final inactiveV = _vehicles.length - activeV;
+    final activeRentals = _rentals.where((r) => r['isCompleted'] == false).length;
+    final activeTrips = _trips.where((t) => t['status'] != 'Completed').length;
+    final completedTrips = _trips.where((t) => t['status'] == 'Completed').length;
+
+    // Driver stats from the Drivers table
+    final onTripDrivers = _drivers.where((d) => d['status'] == 'on_trip' || d['status'] == 'On Trip').length;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -311,93 +309,48 @@ class _DashboardState extends State<_DashboardTab> {
                 children: [
                   _stat(
                     Icons.business_rounded,
-                    'Aktif Şirketler',
-                    activeCompanies,
-                    sub: '${_companies.length} toplam',
+                    'Şirketler',
+                    _companies.length,
+                    sub: '$activeCompanies aktif',
                     color: kBlue,
                   ),
                   _stat(
                     Icons.people_rounded,
-                    'Toplam Kullanıcı',
+                    'Kullanıcılar',
                     _users.length,
-                    sub: '${drivers.length} şoför',
+                    sub: '${_managers.length} yönetici',
                     color: const Color(0xFF7C3AED),
                   ),
                   _stat(
                     Icons.local_shipping_rounded,
-                    'Aktif Şoförler',
-                    activeD,
-                    sub: 'Ort. ${avgScore.toStringAsFixed(1)} puan',
+                    'Şoförler',
+                    _drivers.length,
+                    sub: '$onTripDrivers seferde',
                     color: kGreen,
                   ),
                   _stat(
                     Icons.directions_car_rounded,
-                    'Aktif Araçlar',
-                    activeV,
-                    sub: '${_vehicles.length} toplam',
+                    'Araçlar',
+                    _vehicles.length,
+                    sub: '$activeV aktif · $inactiveV pasif',
                     color: const Color(0xFFD97706),
+                  ),
+                  _stat(
+                    Icons.swap_horiz_rounded,
+                    'Kiralamalar',
+                    _rentals.length,
+                    sub: '$activeRentals aktif kiralama',
+                    color: const Color(0xFF0891B2),
+                  ),
+                  _stat(
+                    Icons.map_rounded,
+                    'Seferler',
+                    _trips.length,
+                    sub: '$activeTrips aktif · $completedTrips tamamlanan',
+                    color: const Color(0xFFEA580C),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              const Text(
-                'Şirket Durumu',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (_companies.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: kCard,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: kBorder),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Şirket kaydı yok.',
-                      style: TextStyle(color: kMuted),
-                    ),
-                  ),
-                )
-              else
-                Column(
-                  children: _companies
-                      .map(
-                        (c) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: kCard,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: kBorder),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  c['name'] ?? '—',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                              kBadge(
-                                kStatusLabel(c['status']),
-                                kStatusColor(c['status']),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
               const SizedBox(height: 80),
             ],
           ],
@@ -470,129 +423,165 @@ class _DashboardState extends State<_DashboardTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Denetim (Audit Logs) — read-only, matches web AuditLogsTab.tsx
+// Denetim (Audit Logs) — Mock data, backend API henüz mevcut değil
 // ═══════════════════════════════════════════════════════════════════════════
-class _AuditTab extends StatelessWidget {
+class _AuditTab extends StatefulWidget {
   const _AuditTab();
+  @override
+  State<_AuditTab> createState() => _AuditTabState();
+}
 
+class _AuditTabState extends State<_AuditTab> {
+  String _filter = 'Tümü';
+  
   static const _logs = [
-    {
-      'action': 'COMPANY_CREATED',
-      'desc': 'Yeni şirket sisteme eklendi',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-18 02:30',
-    },
-    {
-      'action': 'USER_CREATED',
-      'desc': 'Yeni kullanıcı oluşturuldu',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-17 18:15',
-    },
-    {
-      'action': 'VEHICLE_UPDATED',
-      'desc': 'Araç bilgileri güncellendi',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-17 15:40',
-    },
-    {
-      'action': 'DRIVER_CREATED',
-      'desc': 'Yeni şoför sisteme eklendi',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-16 11:20',
-    },
-    {
-      'action': 'RENTAL_CREATED',
-      'desc': 'Kiralama kaydı oluşturuldu',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-15 09:00',
-    },
-    {
-      'action': 'LOGIN',
-      'desc': 'Kullanıcı oturum açtı',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-18 00:05',
-    },
-    {
-      'action': 'COMPANY_UPDATED',
-      'desc': 'Şirket bilgileri güncellendi',
-      'user': 'admin@fleet.com',
-      'date': '2026-03-14 16:30',
-    },
+    {'action': 'LOGIN', 'desc': 'Sistem yöneticisi oturum açtı', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-06 01:30'},
+    {'action': 'COMPANY_CREATED', 'desc': 'Furkan Şirket sisteme eklendi', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-05 18:45'},
+    {'action': 'USER_CREATED', 'desc': 'Mehmet Başaran kullanıcısı oluşturuldu', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-05 17:20'},
+    {'action': 'VEHICLE_UPDATED', 'desc': '07 AA 07 plakalı araç güncellendi', 'user': 'tasiyici@fleet.com', 'ip': '10.0.0.25', 'date': '2026-05-05 16:55'},
+    {'action': 'RENTAL_CREATED', 'desc': '35 DP 149 için kiralama talebi oluşturuldu', 'user': 'ikbal@fleet.com', 'ip': '10.0.0.42', 'date': '2026-05-05 15:30'},
+    {'action': 'RENTAL_APPROVED', 'desc': '35 DP 149 kiralama talebi onaylandı', 'user': 'tasiyici@fleet.com', 'ip': '10.0.0.25', 'date': '2026-05-05 15:45'},
+    {'action': 'USER_UPDATED', 'desc': 'Feyiz Ali Bozkurt kullanıcı bilgileri güncellendi', 'user': 'ikbal@fleet.com', 'ip': '10.0.0.42', 'date': '2026-05-05 14:10'},
+    {'action': 'DRIVER_CREATED', 'desc': 'Furkan Şoför şoför kaydı oluşturuldu', 'user': 'tasiyici@fleet.com', 'ip': '10.0.0.25', 'date': '2026-05-05 11:00'},
+    {'action': 'LOGIN', 'desc': 'Şirket yöneticisi oturum açtı', 'user': 'tasiyici@fleet.com', 'ip': '10.0.0.25', 'date': '2026-05-05 09:15'},
+    {'action': 'VEHICLE_CREATED', 'desc': '37 ab 07 plakalı araç sisteme eklendi', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-04 22:30'},
+    {'action': 'COMPANY_UPDATED', 'desc': 'Taşıyıcılar A.Ş bilgileri güncellendi', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-04 20:00'},
+    {'action': 'USER_DELETED', 'desc': 'Test kullanıcısı silindi', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-04 18:40'},
+    {'action': 'PERMISSION_UPDATED', 'desc': 'Asım Kökçü yönetici yetkileri güncellendi', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-04 17:15'},
+    {'action': 'LOGIN', 'desc': 'İkbal Ceyhan oturum açtı', 'user': 'ikbal@fleet.com', 'ip': '10.0.0.42', 'date': '2026-05-04 14:50'},
+    {'action': 'RENTAL_RETURNED', 'desc': '41 ZVY 513 kiralama iade edildi', 'user': 'ikbal@fleet.com', 'ip': '10.0.0.42', 'date': '2026-05-04 13:20'},
+    {'action': 'VEHICLE_DELETED', 'desc': 'Test aracı sistemden kaldırıldı', 'user': 'admin@fleet.com', 'ip': '192.168.1.10', 'date': '2026-05-03 10:30'},
+    {'action': 'LOCATION_CREATED', 'desc': 'İstanbul Ana Depo eklendi', 'user': 'tasiyici@fleet.com', 'ip': '10.0.0.25', 'date': '2026-05-03 09:00'},
+    {'action': 'LOGIN_FAILED', 'desc': 'Başarısız giriş denemesi', 'user': 'unknown@test.com', 'ip': '203.0.113.50', 'date': '2026-05-02 23:55'},
   ];
+
+  static const _filterOptions = ['Tümü', 'LOGIN', 'CREATED', 'UPDATED', 'DELETED'];
 
   Color _color(String? a) {
     if (a == null) return Colors.grey;
-    if (a.contains('CREATED')) return kBlue;
-    if (a.contains('UPDATED')) return Colors.orange;
+    if (a.contains('FAILED')) return Colors.red;
     if (a.contains('DELETED')) return Colors.red;
+    if (a.contains('CREATED')) return kBlue;
+    if (a.contains('UPDATED') || a.contains('APPROVED')) return Colors.orange;
+    if (a.contains('RETURNED')) return const Color(0xFF7C3AED);
     if (a.contains('LOGIN')) return kGreen;
     return Colors.grey;
   }
 
+  IconData _icon(String? a) {
+    if (a == null) return Icons.info_outline;
+    if (a.contains('LOGIN')) return Icons.login_rounded;
+    if (a.contains('COMPANY')) return Icons.business_rounded;
+    if (a.contains('USER') || a.contains('DRIVER')) return Icons.person_rounded;
+    if (a.contains('VEHICLE')) return Icons.directions_car_rounded;
+    if (a.contains('RENTAL')) return Icons.swap_horiz_rounded;
+    if (a.contains('PERMISSION')) return Icons.shield_rounded;
+    if (a.contains('LOCATION')) return Icons.warehouse_rounded;
+    return Icons.info_outline;
+  }
+
+  List<Map<String, String>> get _filtered {
+    if (_filter == 'Tümü') return _logs;
+    return _logs.where((l) => (l['action'] ?? '').contains(_filter)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(14),
-      itemCount: _logs.length,
-      itemBuilder: (_, i) {
-        final l = _logs[i];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: kCard,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: kBorder),
-          ),
+    final logs = _filtered;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _color(l['action']),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
+              const Icon(Icons.filter_list_rounded, color: kMuted, size: 16),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l['desc'] ?? '',
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        kBadge(
-                          (l['action'] ?? '').replaceAll('_', ' '),
-                          _color(l['action']),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _filterOptions.map((f) {
+                      final sel = _filter == f;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(f, style: TextStyle(color: sel ? Colors.white : kMuted, fontSize: 11)),
+                          selected: sel,
+                          selectedColor: kBlue,
+                          backgroundColor: kCard,
+                          side: BorderSide(color: sel ? kBlue : kBorder),
+                          onSelected: (_) => setState(() => _filter = f),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          l['date'] ?? '',
-                          style: const TextStyle(color: kMuted, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      l['user'] ?? '',
-                      style: const TextStyle(color: kMuted, fontSize: 11),
-                    ),
-                  ],
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: logs.isEmpty
+              ? const Center(child: Text('Kayıt bulunamadı.', style: TextStyle(color: kMuted)))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
+                  itemCount: logs.length,
+                  itemBuilder: (_, i) {
+                    final l = logs[i];
+                    final action = l['action'] ?? '';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: kCard,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: _color(action).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(_icon(action), size: 16, color: _color(action)),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  l['desc'] ?? '',
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    kBadge(action.replaceAll('_', ' '), _color(action)),
+                                    const SizedBox(width: 8),
+                                    Text(l['date'] ?? '', style: const TextStyle(color: kMuted, fontSize: 10)),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${l['user'] ?? ''} · ${l['ip'] ?? ''}',
+                                  style: const TextStyle(color: kMuted, fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }

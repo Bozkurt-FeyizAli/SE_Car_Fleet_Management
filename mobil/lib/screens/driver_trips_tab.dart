@@ -164,7 +164,7 @@ class _DriverTripsTabState extends State<DriverTripsTab> {
                       ),
                       if (_driverRecord != null)
                         Text(
-                          'Durum: ${_driverRecord!['status'] ?? '—'}',
+                          'Durum: ${kStatusLabel(_driverRecord!['status'])}',
                           style: const TextStyle(color: kMuted, fontSize: 12),
                         ),
                     ],
@@ -269,8 +269,8 @@ class _DriverTripsTabState extends State<DriverTripsTab> {
                               fontSize: 18)),
                     ]),
                     kBadge(
-                      status == 'Active' ? 'Aktif Görev' : status,
-                      Colors.orange,
+                      kStatusLabel(status),
+                      kStatusColor(status),
                     ),
                   ],
                 ),

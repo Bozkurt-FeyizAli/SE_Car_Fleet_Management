@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'shared_styles.dart';
+import '../models/user_model.dart';
+import '../services/api_service.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Accident Tab — matches web AccidentReportTab.tsx (fully functional form)
 // ══════════════════════════════════════════════════════════════════════════════
 class DriverAccidentTab extends StatefulWidget {
-  const DriverAccidentTab({super.key});
+  final UserModel user;
+  const DriverAccidentTab({super.key, required this.user});
   @override
   State<DriverAccidentTab> createState() => _DriverAccidentTabState();
 }
 
 class _DriverAccidentTabState extends State<DriverAccidentTab> {
+  final _api = ApiService();
   final _location = TextEditingController();
   final _desc = TextEditingController();
   String _severity = 'minor';
@@ -24,11 +28,12 @@ class _DriverAccidentTabState extends State<DriverAccidentTab> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_desc.text.isEmpty || _location.text.isEmpty) {
       kError(context, 'Lütfen açıklama ve konum bilgilerini girin');
       return;
     }
+    
     setState(
       () => _reports.insert(0, {
         'date': _date,
@@ -38,9 +43,47 @@ class _DriverAccidentTabState extends State<DriverAccidentTab> {
         'status': 'Bildirildi',
       }),
     );
+    
+    final reportedLoc = _location.text;
+    final reportedDesc = _desc.text;
     _location.clear();
     _desc.clear();
+    
     kSuccess(context, 'Kaza bildirimi başarıyla gönderildi');
+
+    // Make the vehicle passive if severity is moderate or major
+    if (_severity == 'moderate' || _severity == 'major') {
+      try {
+        final userId = int.tryParse(widget.user.id);
+        if (userId != null) {
+          final drivers = await _api.getDrivers();
+          final driverData = drivers.cast<Map<String, dynamic>>().firstWhere(
+            (d) => d['userId'] == userId, 
+            orElse: () => <String, dynamic>{},
+          );
+          final plate = driverData['vehiclePlate'];
+          if (plate != null) {
+            final vehicles = await _api.getVehicles();
+            final vehicleData = vehicles.cast<Map<String, dynamic>>().firstWhere(
+              (v) => v['plate'] == plate || v['plateNumber'] == plate, 
+              orElse: () => <String, dynamic>{},
+            );
+            final vId = vehicleData['id'];
+            if (vId != null) {
+              await _api.updateVehicle(vId, {
+                ...vehicleData,
+                'isActive': false,
+              });
+              if (mounted) {
+                kSuccess(context, 'Araç ağır hasar sebebiyle pasife çekildi.');
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Kaza sonrası araç durumu güncellenemedi: $e');
+      }
+    }
   }
 
   String _sevLabel(String s) => s == 'major'

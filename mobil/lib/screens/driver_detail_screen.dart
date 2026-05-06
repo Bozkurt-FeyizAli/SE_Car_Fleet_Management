@@ -39,6 +39,13 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
   Map<String, String> _plateToDriver = {};
   List<Map<String, dynamic>> _allDrivers = [];
 
+  // Manager assignment
+  List<Map<String, dynamic>> _managers = [];
+  List<Map<String, dynamic>> _users = [];
+  int? _currentManagerId;
+  Map<String, dynamic>? _selectedManagerToAssign;
+  bool _managerChanged = false;
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +71,7 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
     status = item?['status'] ?? 'Idle';
 
     _currentlyAssignedPlate = item?['vehiclePlate'];
+    _currentManagerId = (item?['parentManagerId'] as num?)?.toInt();
 
     _loadVehicles();
   }
@@ -74,10 +82,14 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
         _api.getVehicles(),
         _api.getUsers(),
         _api.getDrivers(),
+        _api.getAllRentals(),
+        _api.getManagers(),
       ]);
       final list = results[0].cast<Map<String, dynamic>>();
       final users = results[1].cast<Map<String, dynamic>>();
       final drivers = results[2].cast<Map<String, dynamic>>();
+      final rentals = results[3].cast<Map<String, dynamic>>();
+      final managers = results[4].cast<Map<String, dynamic>>();
 
       if (!mounted) return;
 
@@ -96,17 +108,46 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
         }
       }
 
+      final availableList = <Map<String, dynamic>>[];
+      for (final v in list) {
+        final plate = v['plate'] ?? v['plateNumber'];
+        final activeRentals = rentals.where((r) => r['vehiclePlate'] == plate && r['isCompleted'] == false).toList();
+        
+        bool isRentedOut = false;
+        bool isRentedIn = false;
+        if (activeRentals.isNotEmpty) {
+          final rental = activeRentals.first;
+          if (rental['ownerCompanyId'] == widget.defaultCompanyId && rental['renterCompanyId'] != widget.defaultCompanyId) {
+            isRentedOut = true;
+          } else if (rental['renterCompanyId'] == widget.defaultCompanyId && rental['ownerCompanyId'] != widget.defaultCompanyId) {
+            isRentedIn = true;
+          }
+        }
+        
+        bool isMaintenance = ((v['currentKm'] as num?) ?? 0) >= ((v['nextMaintenanceKm'] as num?) ?? 999999);
+        final isOwned = v['companyId'] == widget.defaultCompanyId;
+        
+        // Müsait: Includes Owned or RentedIn, excludes RentedOut, excludes Maintenance.
+        if ((isOwned || isRentedIn) && !isRentedOut && !isMaintenance) {
+          availableList.add(v);
+        } else if (plate == _currentlyAssignedPlate) {
+          // Always include the currently assigned vehicle so it doesn't disappear from dropdown
+          availableList.add(v);
+        }
+      }
+
+      // Filter managers by same company
+      final companyManagers = managers.where((m) {
+        final mUser = users.firstWhere((u) => u['id'] == m['userId'], orElse: () => <String, dynamic>{});
+        return mUser.isNotEmpty && (mUser['companyId'] == widget.defaultCompanyId);
+      }).toList();
+
       setState(() {
         _allDrivers = drivers;
         _plateToDriver = p2d;
-        // Yalnızca şirkete ait aktif araçları listele veya kiralık alınanları
-        _vehicles = list
-            .where(
-              (v) =>
-                  v['companyId'] == widget.defaultCompanyId ||
-                  v['isActive'] == true,
-            )
-            .toList();
+        _vehicles = availableList;
+        _managers = companyManagers;
+        _users = users;
       });
     } catch (e) {
       // Ignore gracefully
@@ -163,7 +204,11 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
           'role': 2,
           'phoneNumber': phoneC.text,
           'tcIdentityNumber': tcC.text,
-          'parentManagerId': null,
+          'parentManagerId': _managerChanged
+              ? (_selectedManagerToAssign != null && _selectedManagerToAssign!['id'] != -1
+                  ? _selectedManagerToAssign!['id']
+                  : null)
+              : _currentManagerId,
           'criminalRecord': null,
           'companyId': item['companyId'] ?? widget.defaultCompanyId,
           if (passC.text.isNotEmpty) 'passwordHash': passC.text,
@@ -218,7 +263,11 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
           'role': 2,
           'phoneNumber': phoneC.text,
           'tcIdentityNumber': tcC.text,
-          'parentManagerId': null,
+          'parentManagerId': _managerChanged
+              ? (_selectedManagerToAssign != null && _selectedManagerToAssign!['id'] != -1
+                  ? _selectedManagerToAssign!['id']
+                  : null)
+              : null,
           'criminalRecord': null,
           'companyId': widget.defaultCompanyId,
           if (passC.text.isNotEmpty) 'passwordHash': passC.text,
@@ -305,6 +354,101 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
         }
       }
     }
+  }
+
+  // ── Manager name helper ───────────────────────────────────────────────────
+  String _managerDisplayName(int managerId) {
+    final m = _managers.firstWhere((m) => m['id'] == managerId, orElse: () => <String, dynamic>{});
+    if (m.isEmpty) return 'Yönetici #$managerId';
+    final uid = m['userId'];
+    final u = _users.firstWhere((u) => u['id'] == uid, orElse: () => <String, dynamic>{});
+    if (u.isEmpty) return 'Yönetici #$managerId';
+    return '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+  }
+
+  Widget _buildManagerAssignment() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Yönetici Ataması',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_currentManagerId != null && !_managerChanged) ...[
+            Row(
+              children: [
+                const Icon(Icons.person, color: Color(0xFF7C3AED)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _managerDisplayName(_currentManagerId!),
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _managerChanged = true;
+                      _selectedManagerToAssign = {'id': -1};
+                    });
+                  },
+                  child: const Text('Değiştir', style: TextStyle(color: Colors.orangeAccent)),
+                ),
+              ],
+            ),
+          ] else ...[
+            DropdownButtonFormField<Map<String, dynamic>?>(
+              value: _selectedManagerToAssign?['id'] == -1 ? null : _selectedManagerToAssign,
+              dropdownColor: kCard,
+              isExpanded: true,
+              menuMaxHeight: 300,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: fieldDecor('Yönetici Seçin'),
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('Yönetici Atanmadı', style: TextStyle(color: kMuted)),
+                ),
+                ..._managers.map((m) {
+                  final uid = m['userId'];
+                  final u = _users.firstWhere((u) => u['id'] == uid, orElse: () => <String, dynamic>{});
+                  final name = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.trim();
+                  final dept = m['departmentName'] ?? '';
+                  return DropdownMenuItem(
+                    value: m,
+                    child: Text(dept.isNotEmpty ? '$name ($dept)' : name),
+                  );
+                }),
+              ],
+              onChanged: (v) => setState(() {
+                _managerChanged = true;
+                _selectedManagerToAssign = v;
+              }),
+            ),
+            if (_managerChanged && _currentManagerId != null && (_selectedManagerToAssign == null || _selectedManagerToAssign!['id'] == -1))
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Mevcut yönetici ataması kaldırılacak.',
+                  style: TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -536,6 +680,10 @@ class _DriverDetailScreenState extends State<DriverDetailScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // ── Manager Assignment ──
+                  _buildManagerAssignment(),
                   const SizedBox(height: 16),
 
                   Container(

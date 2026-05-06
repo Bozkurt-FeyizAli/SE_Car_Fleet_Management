@@ -16,6 +16,7 @@ class _State extends State<AdminLocationsTab> {
   bool _loading = true;
 
   int get _companyId => widget.user.companyId ?? 1;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -42,6 +43,10 @@ class _State extends State<AdminLocationsTab> {
   Future<void> _openAddDialog() async {
     final nameC = TextEditingController();
     final addressC = TextEditingController();
+    final cityC = TextEditingController();
+    final districtC = TextEditingController();
+    final neighborhoodC = TextEditingController();
+    final zipCodeC = TextEditingController();
     final latC = TextEditingController();
     final lngC = TextEditingController();
 
@@ -56,7 +61,11 @@ class _State extends State<AdminLocationsTab> {
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             kField('Depo Adı *', nameC),
+            kField('İl *', cityC),
+            kField('İlçe *', districtC),
+            kField('Mahalle *', neighborhoodC),
             kField('Tam Adres *', addressC),
+            kField('Posta Kodu *', zipCodeC),
             kField('Enlem (Lat)', latC, type: TextInputType.numberWithOptions(decimal: true, signed: true)),
             kField('Boylam (Lng)', lngC, type: TextInputType.numberWithOptions(decimal: true, signed: true)),
           ]),
@@ -78,11 +87,15 @@ class _State extends State<AdminLocationsTab> {
     if (ok != true || !mounted) return;
     final nameText = nameC.text.trim();
     final addressText = addressC.text.trim();
+    final cityText = cityC.text.trim();
+    final districtText = districtC.text.trim();
+    final neighborhoodText = neighborhoodC.text.trim();
+    final zipCodeText = zipCodeC.text.trim();
     final latText = latC.text.trim();
     final lngText = lngC.text.trim();
 
-    if (nameText.isEmpty || addressText.isEmpty) {
-      if (mounted) kError(context, 'Depo adı ve adres zorunludur');
+    if (nameText.isEmpty || addressText.isEmpty || cityText.isEmpty || districtText.isEmpty || neighborhoodText.isEmpty || zipCodeText.isEmpty) {
+      if (mounted) kError(context, 'Tüm yıldızlı (*) alanlar zorunludur');
       return;
     }
 
@@ -116,7 +129,13 @@ class _State extends State<AdminLocationsTab> {
         'locationName': nameText,
         'latitude': lat,
         'longitude': lng,
-        'address': {'fullAddress': addressText},
+        'address': {
+          'city': cityText,
+          'district': districtText,
+          'neighborhood': neighborhoodText,
+          'fullAddress': addressText,
+          'zipCode': zipCodeText,
+        },
       });
       if (mounted) kSuccess(context, '$nameText başarıyla eklendi!');
       await _load();
@@ -127,37 +146,87 @@ class _State extends State<AdminLocationsTab> {
     }
   }
 
+  Future<void> _deleteLocation(Map<String, dynamic> loc) async {
+    final id = loc['id'];
+    if (id == null) return;
+    
+    final ok = await kConfirm(context, 'Depo Sil', '${loc['locationName']} adlı depoyu silmek istiyor musunuz?');
+    if (ok != true) return;
+    
+    setState(() => _loading = true);
+    try {
+      await _api.deleteLocation(id);
+      if (mounted) kSuccess(context, 'Depo silindi');
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      kError(context, 'Silinemedi: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filtered = _locations.where((l) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final name = (l['locationName'] ?? '').toString().toLowerCase();
+      final address = (l['address']?['fullAddress'] ?? l['fullAddress'] ?? '').toString().toLowerCase();
+      return name.contains(q) || address.contains(q);
+    }).toList();
+
     return Stack(children: [
       Container(
         color: kBg,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator(color: kBlue))
-            : _locations.isEmpty
-                ? const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.warehouse_outlined, size: 56, color: kMuted),
-                        SizedBox(height: 14),
-                        Text(
-                          'Henüz depo kaydı yok.',
-                          style: TextStyle(color: kMuted, fontSize: 15),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                style: const TextStyle(color: Colors.white),
+                decoration: fieldDecor('Depo ara...').copyWith(
+                  prefixIcon: const Icon(Icons.search, color: kMuted, size: 20),
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _searchQuery = val;
+                  });
+                },
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: kBlue))
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.warehouse_outlined, size: 56, color: kMuted),
+                              const SizedBox(height: 14),
+                              Text(
+                                _locations.isEmpty ? 'Henüz depo kaydı yok.' : 'Arama sonucu bulunamadı.',
+                                style: const TextStyle(color: kMuted, fontSize: 15),
+                              ),
+                              if (_locations.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    '+ düğmesine basarak ekleyin.',
+                                    style: const TextStyle(color: kMuted, fontSize: 13),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) => _buildCard(filtered[i]),
                         ),
-                        SizedBox(height: 6),
-                        Text(
-                          '+ düğmesine basarak ekleyin.',
-                          style: TextStyle(color: kMuted, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    itemCount: _locations.length,
-                    itemBuilder: (_, i) => _buildCard(_locations[i]),
-                  ),
+            ),
+          ],
+        ),
       ),
       Positioned(
         right: 16,
@@ -174,7 +243,7 @@ class _State extends State<AdminLocationsTab> {
 
   Widget _buildCard(Map<String, dynamic> loc) {
     final name = loc['locationName'] ?? '—';
-    final address = loc['fullAddress'] ?? '—';
+    final address = loc['address']?['fullAddress'] ?? loc['fullAddress'] ?? '—';
     final lat = (loc['latitude'] as num?)?.toStringAsFixed(5) ?? '—';
     final lng = (loc['longitude'] as num?)?.toStringAsFixed(5) ?? '—';
 
@@ -215,6 +284,19 @@ class _State extends State<AdminLocationsTab> {
                 ),
               ),
               kBadge('Aktif', kGreen),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: kMuted),
+                color: kCard,
+                onSelected: (val) {
+                  if (val == 'delete') _deleteLocation(loc);
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Sil', style: TextStyle(color: Colors.redAccent)),
+                  ),
+                ],
+              ),
             ]),
           ),
           // ── Body ──

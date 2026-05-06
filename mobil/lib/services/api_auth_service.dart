@@ -37,6 +37,31 @@ class ApiAuthService implements AuthService {
       //   "lastName": "Yonetici",
       //   "roleId": 1
       // }
+      // Ek olarak companyId'yi almak icin User detayini cekelim
+      try {
+        final userRes = await _httpClient.get(
+          Uri.parse('$baseUrl/api/User'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${data['token']}',
+          },
+        );
+        if (userRes.statusCode == 200) {
+          final uData = jsonDecode(userRes.body);
+          final usersList = (uData is List ? uData : uData['value'] ?? []) as List<dynamic>;
+          final matchingUser = usersList.cast<Map<String, dynamic>>().firstWhere(
+            (u) => u['email']?.toString().toLowerCase() == email.toLowerCase(),
+            orElse: () => <String, dynamic>{},
+          );
+          if (matchingUser.isNotEmpty) {
+            data['companyId'] = matchingUser['companyId'];
+            data['userId'] = matchingUser['id'];
+          }
+        }
+      } catch (e) {
+        print('Kullanici detayi cekilemedi: $e');
+      }
+
       final user = UserModel.fromApiResponse(data);
       print(user);
 
@@ -89,40 +114,4 @@ class ApiAuthService implements AuthService {
     };
   }
 
-  @override
-  Future<String> register({
-    required String firstName,
-    required String lastName,
-    required String email,
-    required String userName,
-    required String password,
-    required String confirmPassword,
-    required int roleId,
-  }) async {
-    final response = await _httpClient.post(
-      Uri.parse('$baseUrl/api/Auth/register'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'firstName': firstName,
-        'lastName': lastName,
-        'email': email,
-        'userName': userName,
-        'password': password,
-        'confirmPassword': confirmPassword,
-        'roleId': roleId,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      return 'Kayıt başarılı!';
-    } else if (response.statusCode == 400) {
-      final data = jsonDecode(response.body);
-      final message = data is Map
-          ? (data['message'] ?? data.toString())
-          : response.body;
-      throw Exception(message);
-    } else {
-      throw Exception('Sunucu hatası: ${response.statusCode}');
-    }
-  }
 }

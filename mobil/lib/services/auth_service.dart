@@ -16,16 +16,4 @@ abstract class AuthService {
 
   /// Kullanıcının oturum açıp açmadığını kontrol eder.
   Future<bool> isLoggedIn();
-
-  /// Yeni kullanıcı kaydı yapar. Başarılıysa mesaj döner,
-  /// başarısızsa exception fırlatır.
-  Future<String> register({
-    required String firstName,
-    required String lastName,
-    required String email,
-    required String userName,
-    required String password,
-    required String confirmPassword,
-    required int roleId,
-  });
 }
