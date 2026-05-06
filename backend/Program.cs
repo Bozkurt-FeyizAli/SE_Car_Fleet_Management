@@ -23,6 +23,13 @@ builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<ILicenseService, LicenseService>();
+
+builder.Services.AddScoped<IAddressService, AddressService>();
+builder.Services.AddScoped<IDriverVehicleAssignmentService, DriverVehicleAssignmentService>();
+builder.Services.AddScoped<IManagerPermissionService, ManagerPermissionService>();
+builder.Services.AddScoped<IPermissionService, PermissionService>();
+builder.Services.AddScoped<IDepartmentService, DepartmentService>();
+builder.Services.AddScoped<IRentalPricingRuleService, RentalPricingRuleService>();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));

@@ -11,9 +11,11 @@ namespace Backend.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<Company> Companies { get; set; }
+        public DbSet<Department> Departments { get; set; }
         public DbSet<Manager> Managers { get; set; }
         public DbSet<Permission> Permissions { get; set; }
         public DbSet<ManagerPermission> ManagerPermissions { get; set; }
+        public DbSet<DepartmentPermission> DepartmentPermissions { get; set; }
         public DbSet<Driver> Drivers { get; set; }
         public DbSet<Vehicle> Vehicles { get; set; }
         public DbSet<License> Licenses { get; set; }
@@ -36,6 +38,33 @@ namespace Backend.Data
                 .HasOne(m => m.User)
                 .WithMany()
                 .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Manager -> Department
+            modelBuilder.Entity<Manager>()
+                .HasOne(m => m.Department)
+                .WithMany(d => d.Managers)
+                .HasForeignKey(m => m.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Department -> Company
+            modelBuilder.Entity<Department>()
+                .HasOne(d => d.Company)
+                .WithMany()
+                .HasForeignKey(d => d.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // DepartmentPermission (composite PK already set via [PrimaryKey] attribute)
+            modelBuilder.Entity<DepartmentPermission>()
+                .HasOne(dp => dp.Department)
+                .WithMany(d => d.DepartmentPermissions)
+                .HasForeignKey(dp => dp.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<DepartmentPermission>()
+                .HasOne(dp => dp.Permission)
+                .WithMany()
+                .HasForeignKey(dp => dp.PermissionId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             // User -> Driver (One-to-One: A user can be a driver)
@@ -70,6 +99,12 @@ namespace Backend.Data
                 .HasOne(r => r.RenterCompany)
                 .WithMany()
                 .HasForeignKey(r => r.RenterCompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Rental>()
+                .HasOne(r => r.RentedCompany)
+                .WithMany()
+                .HasForeignKey(r => r.RentedCompanyId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             // Location -> Company
